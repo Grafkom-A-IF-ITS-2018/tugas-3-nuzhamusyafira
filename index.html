@@ -1,0 +1,757 @@
+<html>
+  <head>
+    <title>Tugas 2</title>
+    <meta http-equiv="content-type" content="text/html" charset="ISO-8859-1">
+
+    <script type="text/javascript" src="gl-matrix-min.js"></script>
+
+    <script id="shader-fs" type="x-shader/x-fragment">
+      precision mediump float;
+      varying vec4 vColor;
+      void main(void) {
+        gl_FragColor = vColor;
+      }
+    </script>
+    
+    <script id="shader-vs" type="x-shader/x-vertex">
+      attribute vec3 aVertexPosition;
+      attribute vec4 aVertexColor;
+      uniform mat4 uMVMatrix;
+      uniform mat4 uPMatrix;
+      varying vec4 vColor;
+      void main(void) {
+        gl_Position = uPMatrix * uMVMatrix * vec4(aVertexPosition, 1.0);
+        vColor = aVertexColor;
+      }
+    </script>
+    <script type="text/javascript">
+      /** @type {WebGLRenderingContext} */
+      var gl
+      function initGL(canvas) {
+        try {
+          gl = canvas.getContext('webgl')
+          gl.viewportWidth = canvas.width
+          gl.viewportHeight = canvas.height
+        } catch (e) {}
+        if (!gl) {
+          alert('Tidak bisa menginisialisasi WebGL')
+        }
+      }
+      function getShader(gl, id) {
+        var shaderScript = document.getElementById(id)
+        if (!shaderScript) {
+          return null
+        }
+        var str = ''
+        var k = shaderScript.firstChild
+        while (k) {
+          if (k.nodeType == 3) {
+            str += k.textContent
+          }
+          k = k.nextSibling
+        }
+        var shader
+        if (shaderScript.type == 'x-shader/x-fragment') {
+          shader = gl.createShader(gl.FRAGMENT_SHADER)
+        } else if (shaderScript.type = 'x-shader/x-vertex') {
+          shader = gl.createShader(gl.VERTEX_SHADER)
+        } else {
+          return null
+        }
+        gl.shaderSource(shader, str)
+        gl.compileShader(shader)
+        if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+          alert(gl.getShaderInfoLog(shader))
+          return null
+        }
+        return shader
+      }
+      var shaderProgram
+      function initShaders() {
+        var fragmentShader = getShader(gl, 'shader-fs')
+        var vertexShader = getShader(gl, 'shader-vs')
+        shaderProgram = gl.createProgram()
+        gl.attachShader(shaderProgram, fragmentShader)
+        gl.attachShader(shaderProgram, vertexShader)
+        gl.linkProgram(shaderProgram)
+        if (!gl.getProgramParameter(shaderProgram, gl.LINK_STATUS)) {
+          alert('Tidak bisa menginisialisasi shaders')
+        }
+        gl.useProgram(shaderProgram)
+        shaderProgram.vertexPositionAttribute = gl.getAttribLocation(shaderProgram, 'aVertexPosition')
+        gl.enableVertexAttribArray(shaderProgram.vertexPositionAttribute)
+        shaderProgram.vertexColorAttribute = gl.getAttribLocation(shaderProgram, 'aVertexColor')
+        gl.enableVertexAttribArray(shaderProgram.vertexColorAttribute)
+        shaderProgram.pMatrixUniform = gl.getUniformLocation(shaderProgram, 'uPMatrix')
+        shaderProgram.mvMatrixUniform = gl.getUniformLocation(shaderProgram, 'uMVMatrix')
+      }
+      var mvMatrix = mat4.create()
+      var mvMatrixStack = []
+      var pMatrix = mat4.create()
+      function mvPushMatrix() {
+        var copy = mat4.create()
+        mat4.copy(copy, mvMatrix)
+        mvMatrixStack.push(copy)
+      }
+      function mvPopMatrix() {
+        if (mvMatrixStack.length == 0) {
+          throw "Tumpukan matriks kosong"
+        }
+        mvMatrix = mvMatrixStack.pop()
+      }
+      function setMatrixUniforms() {
+        gl.uniformMatrix4fv(shaderProgram.pMatrixUniform, false, pMatrix)
+        gl.uniformMatrix4fv(shaderProgram.mvMatrixUniform, false, mvMatrix)
+      }
+      var triangleVertexPositionBuffer
+      var triangleVertexColorBuffer
+      var lineVertexPositionBuffer
+      var lineVertexColorBuffer
+      var zVertices=[]
+      var lnVertices=[]
+      function initBuffers() {
+        // Triangle Position
+        triangleVertexPositionBuffer = gl.createBuffer()
+        gl.bindBuffer(gl.ARRAY_BUFFER, triangleVertexPositionBuffer)
+        var vertices = [
+          -1.0, 1.0, 0.25,
+            1.0, 1.0, 0.25,
+            -1.0, 0.65, 0.25,
+            1.0, 0.65, 0.25,
+
+            1.0, 0.65, 0.25,
+            0.4, 0.65, 0.25,
+            -0.4, -0.65, 0.25,
+            -1.0, -0.65, 0.25,
+
+            // 2
+
+            -1.0, -0.65, 0.25,
+            1.0, -0.65, 0.25,
+            -1.0, -1.0, 0.25,
+            1.0, -1.0, 0.25,
+
+            1.0, -1.0, 0.25,
+            1.0, -1.0, -0.25,
+            -1.0, -1.0, -0.25,
+            1.0, -1.0, 0.25,
+            -1.0, -1.0, 0.25,
+
+            // 3
+
+            -1.0, -1.0, 0.25,
+            -1.0, -0.65, 0.25,
+            -1.0, -1.0, -0.25,
+            -1.0, -0.65, -0.25,
+
+            -1.0, -0.65, -0.25,
+            1.0, -0.65, -0.25,
+            -1.0, -1.0, -0.25,
+            1.0, -1.0, -0.25,
+
+            // 4
+
+            1.0, -1.0, -0.25,
+            1.0, -0.65, -0.25,
+            1.0, -1.0, 0.25,
+            1.0, -0.65, 0.25,
+
+            1.0, -0.65, 0.25,
+            -0.4, -0.65, 0.25,
+            1.0, -0.65, -0.25,
+            -0.4, -0.65, -0.25,
+
+            // 5
+
+            -0.4, -0.65, -0.25,
+            -0.4, -0.65, 0.25,
+            1.0, 0.65, -0.25,
+            1.0, 0.65, 0.25,
+
+            1.0, 0.65, 0.25,
+            1.0, 0.65, -0.25,
+            1.0, 1.0, 0.25,
+            1.0, 1.0, -0.25,
+
+            // 6
+
+            1.0, 1.0, -0.25,
+            1.0, 1.0, 0.25,
+            -1.0, 1.0, -0.25,
+            -1.0, 1.0, 0.25,
+
+            -1.0, 1.0, 0.25,
+            -1.0, 1.0, -0.25,
+            -1.0, 0.65, 0.25,
+            -1.0, 0.65, -0.25,
+
+            // 7
+
+            -1.0, 0.65, -0.25,
+            -1.0, 0.65, 0.25,
+            0.4, 0.65, -0.25,
+            0.4, 0.65, 0.25,
+
+            0.4, 0.65, 0.25,
+            0.4, 0.65, -0.25,
+            -1.0, -0.65, 0.25,
+            -1.0, -0.65, -0.25,
+
+            // 8
+
+            -1.0, -0.65, -0.25,
+            -0.4, -0.65, -0.25,
+            0.4, 0.65, -0.25,
+            1.0, 0.65, -0.25,
+
+            1.0, 0.65, -0.25,
+            -1.0, 0.65, -0.25,
+            1.0, 1.0, -0.25,
+            -1.0, 1.0, -0.25,
+        ]
+        for(var i=0;i<vertices.length/3;i++){
+          zVertices.push([vertices[i*3],vertices[i*3+1],vertices[i*3+2], 1.0])
+        }
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.STATIC_DRAW)
+        triangleVertexPositionBuffer.itemSize = 3
+        triangleVertexPositionBuffer.numItems = vertices.length / 3
+        triangleVertexColorBuffer = gl.createBuffer()
+        gl.bindBuffer(gl.ARRAY_BUFFER, triangleVertexColorBuffer)
+        var colors = [
+          0.84, 0.1, 0.27, 1.0,
+          0.81, 0.42, 0.52, 1.0,
+          0.84, 0.1, 0.27, 1.0,
+          0.81, 0.42, 0.52, 1.0,
+
+          0.81, 0.42, 0.52, 1.0,
+          0.81, 0.42, 0.52, 1.0,
+          0.84, 0.1, 0.27, 1.0,
+          0.84, 0.1, 0.27, 1.0,
+
+          // 2
+
+          0.84, 0.1, 0.27, 1.0,
+          0.84, 0.1, 0.27, 1.0,
+          0.81, 0.42, 0.52, 1.0,
+          0.81, 0.42, 0.52, 1.0,
+
+          // bawah
+          0.84, 0.1, 0.27, 1.0,
+          0.84, 0.1, 0.27, 1.0,
+          0.84, 0.1, 0.27, 1.0,
+          0.84, 0.1, 0.27, 1.0,
+          0.84, 0.1, 0.27, 1.0,
+
+          // 3
+
+          // kiri bawah
+          0.93, 0.41, 0.53, 1.0,
+          0.93, 0.41, 0.53, 1.0,
+          0.93, 0.41, 0.53, 1.0,
+          0.93, 0.41, 0.53, 1.0,
+
+          // belakang bawah
+          0.84, 0.1, 0.27, 1.0,
+          0.84, 0.1, 0.27, 1.0,
+          0.81, 0.42, 0.52, 1.0,
+          0.81, 0.42, 0.52, 1.0,
+
+          // 4
+
+          // kanan bawah
+          0.93, 0.41, 0.53, 1.0,
+          0.93, 0.41, 0.53, 1.0,
+          0.93, 0.41, 0.53, 1.0,
+          0.93, 0.41, 0.53, 1.0,
+
+          // another alas, kek bawah
+          0.2, 0.04, 0.05, 1.0,
+          0.2, 0.04, 0.05, 1.0,
+          0.2, 0.04, 0.05, 1.0,
+          0.2, 0.04, 0.05, 1.0,
+
+          // 5
+
+          // miring 1
+          0.58, 0.05, 0.09, 1.0,
+          0.58, 0.05, 0.09, 1.0,
+          0.58, 0.05, 0.09, 1.0,
+          0.58, 0.05, 0.09, 1.0,
+
+          // kanan atas
+          0.93, 0.41, 0.53, 1.0,
+          0.93, 0.41, 0.53, 1.0,
+          0.93, 0.41, 0.53, 1.0,
+          0.93, 0.41, 0.53, 1.0,
+
+          // 6
+
+          // atas
+          0.84, 0.1, 0.27, 1.0,
+          0.84, 0.1, 0.27, 1.0,
+          0.84, 0.1, 0.27, 1.0,
+          0.84, 0.1, 0.27, 1.0,
+
+          // kiri atas
+          0.93, 0.41, 0.53, 1.0,
+          0.93, 0.41, 0.53, 1.0,
+          0.93, 0.41, 0.53, 1.0,
+          0.93, 0.41, 0.53, 1.0,
+
+          // 7
+
+          // another kek bawah
+          0.2, 0.04, 0.05, 1.0,
+          0.2, 0.04, 0.05, 1.0,
+          0.2, 0.04, 0.05, 1.0,
+          0.2, 0.04, 0.05, 1.0,
+
+          // miring 2
+          0.58, 0.05, 0.09, 1.0,
+          0.58, 0.05, 0.09, 1.0,
+          0.58, 0.05, 0.09, 1.0,
+          0.58, 0.05, 0.09, 1.0,
+
+          // 8
+
+          0.84, 0.1, 0.27, 1.0,
+          0.84, 0.1, 0.27, 1.0,
+          0.81, 0.42, 0.52, 1.0,
+          0.81, 0.42, 0.52, 1.0,
+
+          0.81, 0.42, 0.52, 1.0,
+          0.84, 0.1, 0.27, 1.0,
+          0.81, 0.42, 0.52, 1.0,
+          0.84, 0.1, 0.27, 1.0,
+        ]
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(colors), gl.STATIC_DRAW)
+        triangleVertexColorBuffer.itemSize = 4
+        triangleVertexColorBuffer.numItems = vertices.length / 4
+
+        //cube
+        lineVertexPositionBuffer = gl.createBuffer()
+        gl.bindBuffer(gl.ARRAY_BUFFER, lineVertexPositionBuffer)
+        vertices = [
+          -5.0, -5.0, 5.0,
+            -5.0, 5.0, 5.0,       //a-e
+
+            -5.0, 5.0, 5.0,
+            5.0, 5.0, 5.0,        //e-f
+
+            5.0, 5.0, 5.0,
+            5.0, -5.0, 5.0,       //f-b
+
+            5.0, -5.0, 5.0,
+            -5.0, -5.0, 5.0,      //b-a
+
+            -5.0, -5.0, -5.0,
+            -5.0, 5.0, -5.0,      //d-h
+
+            -5.0, 5.0, -5.0,
+            5.0, 5.0, -5.0,       //h-g
+
+            5.0, 5.0, -5.0,
+            5.0, -5.0, -5.0,      //g-c
+
+            5.0, -5.0, -5.0,
+            -5.0, -5.0, -5.0,
+
+            -5.0, -5.0, 5.0,
+            -5.0, -5.0, -5.0,
+
+            -5.0, 5.0, 5.0,
+            -5.0, 5.0, -5.0,
+
+            5.0, 5.0, 5.0,
+            5.0, 5.0, -5.0,
+            
+            5.0, -5.0, 5.0,
+            5.0, -5.0, -5.0,
+        ]
+        lnVertices.push([-5.0, -5.0, 5.0, 1.0])
+        lnVertices.push([5.0, -5.0, 5.0, 1.0])
+        lnVertices.push([5.0, -5.0, -5.0, 1.0])
+        lnVertices.push([-5.0, -5.0, -5.0, 1.0])
+        lnVertices.push([-5.0, 5.0, 5.0, 1.0])
+        lnVertices.push([5.0, 5.0, 5.0, 1.0])
+        lnVertices.push([5.0, 5.0, -5.0, 1.0])
+        lnVertices.push([-5.0, 5.0, -5.0, 1.0])
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.STATIC_DRAW)
+        lineVertexPositionBuffer.itemSize = 3
+        lineVertexPositionBuffer.numItems = vertices.length / 3
+        // line Color
+        lineVertexColorBuffer = gl.createBuffer()
+        gl.bindBuffer(gl.ARRAY_BUFFER, lineVertexColorBuffer)
+        colors=[]
+        for (var i=0; i < vertices.length / 3; i++) {
+            colors = colors.concat([1.0, 1.0, 1.0, 1.0]);
+        }
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(colors), gl.STATIC_DRAW)
+        lineVertexColorBuffer.itemSize = 4
+        lineVertexColorBuffer.numItems = vertices.length / 4
+      }
+      var rTri=0
+      var transTri=[0.0, 0.0, 0.0]
+      var flag=1
+      var colorFlag=1
+      function drawScene() {
+        zColor()
+        gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight)
+        gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
+        mat4.perspective(pMatrix, glMatrix.toRadian(45), gl.viewportWidth / gl.viewportHeight, 0.1, 100.0)
+        mat4.identity(mvMatrix)
+        mat4.translate(mvMatrix, mvMatrix, [0.0, 0.0, -20.0])
+        mvPushMatrix()
+        gl.bindBuffer(gl.ARRAY_BUFFER, lineVertexPositionBuffer)
+        gl.vertexAttribPointer(shaderProgram.vertexPositionAttribute, lineVertexPositionBuffer.itemSize, gl.FLOAT, false, 0, 0)
+        gl.bindBuffer(gl.ARRAY_BUFFER, lineVertexColorBuffer)
+        gl.vertexAttribPointer(shaderProgram.vertexColorAttribute, lineVertexColorBuffer.itemSize, gl.FLOAT, false, 0, 0)
+        var lineNow=[]
+        for(var i=0;i<lnVertices.length;i++){
+          var temp=matMul(mvMatrix,lnVertices[i])
+          lineNow.push(temp)
+        }
+        setMatrixUniforms()
+        gl.drawArrays(gl.LINES, 0, lineVertexPositionBuffer.numItems)
+        mvPopMatrix()
+        mat4.translate(mvMatrix, mvMatrix, transTri)
+        mvPushMatrix()
+        mat4.rotate(mvMatrix, mvMatrix, glMatrix.toRadian(rTri), [0.0, 1.0, 0.0])
+        gl.bindBuffer(gl.ARRAY_BUFFER, triangleVertexPositionBuffer)
+        gl.vertexAttribPointer(shaderProgram.vertexPositionAttribute, triangleVertexPositionBuffer.itemSize, gl.FLOAT, false, 0, 0)
+        gl.bindBuffer(gl.ARRAY_BUFFER, triangleVertexColorBuffer)
+        gl.vertexAttribPointer(shaderProgram.vertexColorAttribute, triangleVertexColorBuffer.itemSize, gl.FLOAT, false, 0, 0)
+        var zNow=[]
+        for(var i=0;i<zVertices.length; i++) {
+          var temp = matMul(mvMatrix, zVertices[i])
+          zNow.push(temp)
+        }
+        detectCols(zNow,lineNow)
+        setMatrixUniforms()
+        gl.drawArrays(gl.TRIANGLE_STRIP, 0, triangleVertexPositionBuffer.numItems)
+        mvPopMatrix()
+      }
+      function matMul(m,v){
+        var x=m[0]*v[0]+m[4]*v[1]+m[8]*v[2]+m[12]*v[3]
+        var y=m[1]*v[0]+m[5]*v[1]+m[9]*v[2]+m[13]*v[3]
+        var z=m[2]*v[0]+m[6]*v[1]+m[10]*v[2]+m[14]*v[3]
+        var i=m[3]*v[0]+m[7]*v[1]+m[11]*v[2]+m[15]*v[3]
+        return [x,y,z,i]
+      }
+      var dirTri=[]
+      var speed=0.02
+      dirTri[0]=speed
+      dirTri[1]=speed
+      dirTri[2]=speed
+      function detectCols(z,ln){
+        for(var i=0;i<z.length;i++){
+          if(z[i][0]>=ln[5][0]){
+            if(dirTri[0]>0){
+              dirTri[0]=dirTri[0]*(-1.0)
+              flag*=-1
+              colorFlag*=-1
+              zMoves()
+            }
+            return
+          }
+          if(z[i][0]<=ln[4][0]){
+            if(dirTri[0]<0){
+              dirTri[0]=dirTri[0]*(-1.0)
+              flag*=-1
+              colorFlag*=-1
+              zMoves()
+            }
+            return
+          }
+          if(z[i][1]>=ln[5][1]){
+            if(dirTri[1]>0){
+              dirTri[1]=dirTri[1]*(-1.0)
+              zMoves()
+            }
+            return
+          }
+          if(z[i][1]<=ln[1][1]){
+            if(dirTri[1]<0){
+              dirTri[1]=dirTri[1]*(-1.0)
+              zMoves()
+            }
+            return
+          }
+          if(z[i][2]>=ln[4][2]){
+            if(dirTri[2]>0){
+              dirTri[2]=dirTri[2]*(-1.0)
+              zMoves()
+            }
+            return
+          }
+          if(z[i][2]<=ln[7][2]){
+            if(dirTri[2]<0){
+              dirTri[2]=dirTri[2]*(-1.0)
+              zMoves()
+            }
+            return
+          }
+        }
+      }
+      function zColor()
+      {
+        if(colorFlag==-1)
+        {
+          gl.bindBuffer(gl.ARRAY_BUFFER, triangleVertexColorBuffer)
+          var colors = [
+          // depan
+          0.99, 0.73, 0.7, 1.0,
+          0.7, 0.23, 0.28, 1.0,
+          0.99, 0.73, 0.7, 1.0,
+          0.7, 0.23, 0.28, 1.0,
+
+          0.7, 0.23, 0.28, 1.0,
+          0.7, 0.23, 0.28, 1.0,
+          0.99, 0.73, 0.7, 1.0,
+          0.99, 0.73, 0.7, 1.0,
+
+          // 2
+
+          0.99, 0.73, 0.7, 1.0,
+          0.99, 0.73, 0.7, 1.0,
+          0.7, 0.23, 0.28, 1.0,
+          0.7, 0.23, 0.28, 1.0,
+
+          // bawah
+          0.7, 0.23, 0.28, 1.0,
+          0.7, 0.23, 0.28, 1.0,
+          0.7, 0.23, 0.28, 1.0,
+          0.7, 0.23, 0.28, 1.0,
+          0.7, 0.23, 0.28, 1.0,
+
+          // 3
+
+          // kiri bawah
+          0.93, 0.41, 0.53, 1.0,
+          0.93, 0.41, 0.53, 1.0,
+          0.93, 0.41, 0.53, 1.0,
+          0.93, 0.41, 0.53, 1.0,
+
+          // belakang bawah
+          0.99, 0.73, 0.7, 1.0,
+          0.99, 0.73, 0.7, 1.0,
+          0.7, 0.23, 0.28, 1.0,
+          0.7, 0.23, 0.28, 1.0,
+
+          // 4
+
+          // kanan bawah
+          0.93, 0.41, 0.53, 1.0,
+          0.93, 0.41, 0.53, 1.0,
+          0.93, 0.41, 0.53, 1.0,
+          0.93, 0.41, 0.53, 1.0,
+
+          // another alas, kek bawah
+          0.7, 0.23, 0.28, 1.0,
+          0.7, 0.23, 0.28, 1.0,
+          0.7, 0.23, 0.28, 1.0,
+          0.7, 0.23, 0.28, 1.0,
+
+          // 5
+
+          // miring 1
+          0.55, 0.18, 0.22, 1.0,
+          0.55, 0.18, 0.22, 1.0,
+          0.55, 0.18, 0.22, 1.0,
+          0.55, 0.18, 0.22, 1.0,
+
+          // kanan atas
+          0.93, 0.41, 0.53, 1.0,
+          0.93, 0.41, 0.53, 1.0,
+          0.93, 0.41, 0.53, 1.0,
+          0.93, 0.41, 0.53, 1.0,
+
+          // 6
+
+          // atas
+          0.7, 0.23, 0.28, 1.0,
+          0.7, 0.23, 0.28, 1.0,
+          0.7, 0.23, 0.28, 1.0,
+          0.7, 0.23, 0.28, 1.0,
+
+          // kiri atas
+          0.93, 0.41, 0.53, 1.0,
+          0.93, 0.41, 0.53, 1.0,
+          0.93, 0.41, 0.53, 1.0,
+          0.93, 0.41, 0.53, 1.0,
+
+          // 7
+
+          // another kek bawah
+          0.7, 0.23, 0.28, 1.0,
+          0.7, 0.23, 0.28, 1.0,
+          0.7, 0.23, 0.28, 1.0,
+          0.7, 0.23, 0.28, 1.0,
+
+          // miring 2
+          0.55, 0.18, 0.22, 1.0,
+          0.55, 0.18, 0.22, 1.0,
+          0.55, 0.18, 0.22, 1.0,
+          0.55, 0.18, 0.22, 1.0,
+
+          // 8
+
+          0.99, 0.73, 0.7, 1.0,
+          0.99, 0.73, 0.7, 1.0,
+          0.7, 0.23, 0.28, 1.0,
+          0.7, 0.23, 0.28, 1.0,
+
+          0.7, 0.23, 0.28, 1.0,
+          0.99, 0.73, 0.7, 1.0,
+          0.7, 0.23, 0.28, 1.0,
+          0.99, 0.73, 0.7, 1.0,
+          ]
+          gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(colors), gl.STATIC_DRAW)
+        }
+        else{
+          gl.bindBuffer(gl.ARRAY_BUFFER, triangleVertexColorBuffer)
+        var colors = [
+          0.84, 0.1, 0.27, 1.0,
+          0.81, 0.42, 0.52, 1.0,
+          0.84, 0.1, 0.27, 1.0,
+          0.81, 0.42, 0.52, 1.0,
+
+          0.81, 0.42, 0.52, 1.0,
+          0.81, 0.42, 0.52, 1.0,
+          0.84, 0.1, 0.27, 1.0,
+          0.84, 0.1, 0.27, 1.0,
+
+          // 2
+
+          0.84, 0.1, 0.27, 1.0,
+          0.84, 0.1, 0.27, 1.0,
+          0.81, 0.42, 0.52, 1.0,
+          0.81, 0.42, 0.52, 1.0,
+
+          // bawah
+          0.84, 0.1, 0.27, 1.0,
+          0.84, 0.1, 0.27, 1.0,
+          0.84, 0.1, 0.27, 1.0,
+          0.84, 0.1, 0.27, 1.0,
+          0.84, 0.1, 0.27, 1.0,
+
+          // 3
+
+          // kiri bawah
+          0.93, 0.41, 0.53, 1.0,
+          0.93, 0.41, 0.53, 1.0,
+          0.93, 0.41, 0.53, 1.0,
+          0.93, 0.41, 0.53, 1.0,
+
+          // belakang bawah
+          0.84, 0.1, 0.27, 1.0,
+          0.84, 0.1, 0.27, 1.0,
+          0.81, 0.42, 0.52, 1.0,
+          0.81, 0.42, 0.52, 1.0,
+
+          // 4
+
+          // kanan bawah
+          0.93, 0.41, 0.53, 1.0,
+          0.93, 0.41, 0.53, 1.0,
+          0.93, 0.41, 0.53, 1.0,
+          0.93, 0.41, 0.53, 1.0,
+
+          // another alas, kek bawah
+          0.2, 0.04, 0.05, 1.0,
+          0.2, 0.04, 0.05, 1.0,
+          0.2, 0.04, 0.05, 1.0,
+          0.2, 0.04, 0.05, 1.0,
+
+          // 5
+
+          // miring 1
+          0.58, 0.05, 0.09, 1.0,
+          0.58, 0.05, 0.09, 1.0,
+          0.58, 0.05, 0.09, 1.0,
+          0.58, 0.05, 0.09, 1.0,
+
+          // kanan atas
+          0.93, 0.41, 0.53, 1.0,
+          0.93, 0.41, 0.53, 1.0,
+          0.93, 0.41, 0.53, 1.0,
+          0.93, 0.41, 0.53, 1.0,
+
+          // 6
+
+          // atas
+          0.84, 0.1, 0.27, 1.0,
+          0.84, 0.1, 0.27, 1.0,
+          0.84, 0.1, 0.27, 1.0,
+          0.84, 0.1, 0.27, 1.0,
+
+          // kiri atas
+          0.93, 0.41, 0.53, 1.0,
+          0.93, 0.41, 0.53, 1.0,
+          0.93, 0.41, 0.53, 1.0,
+          0.93, 0.41, 0.53, 1.0,
+
+          // 7
+
+          // another kek bawah
+          0.2, 0.04, 0.05, 1.0,
+          0.2, 0.04, 0.05, 1.0,
+          0.2, 0.04, 0.05, 1.0,
+          0.2, 0.04, 0.05, 1.0,
+
+          // miring 2
+          0.58, 0.05, 0.09, 1.0,
+          0.58, 0.05, 0.09, 1.0,
+          0.58, 0.05, 0.09, 1.0,
+          0.58, 0.05, 0.09, 1.0,
+
+          // 8
+
+          0.84, 0.1, 0.27, 1.0,
+          0.84, 0.1, 0.27, 1.0,
+          0.81, 0.42, 0.52, 1.0,
+          0.81, 0.42, 0.52, 1.0,
+
+          0.81, 0.42, 0.52, 1.0,
+          0.84, 0.1, 0.27, 1.0,
+          0.81, 0.42, 0.52, 1.0,
+          0.84, 0.1, 0.27, 1.0,
+        ]
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(colors), gl.STATIC_DRAW)
+        }
+      }
+      var lastTime = 0
+      function animate() {
+        var timeNow = new Date().getTime()
+        if (lastTime != 0) {
+          var elapsed = timeNow - lastTime          
+          rTri += flag*(200 * elapsed) / 1000.0
+          zMoves()
+        }
+        lastTime = timeNow
+      }
+      function zMoves(){
+        transTri[0]+=dirTri[0]
+        transTri[1]+=dirTri[1]
+        transTri[2]+=dirTri[2]
+      }
+      function tick() {
+        requestAnimationFrame(tick)
+        drawScene()
+        animate()
+      }
+      function webGLStart() {
+        var canvas = document.getElementById('mycanvas')
+        initGL(canvas)
+        initShaders()
+        initBuffers()
+        gl.clearColor(0.0, 0.0, 0.0, 1.0)
+        gl.enable(gl.DEPTH_TEST)
+        tick()
+      }
+    </script>
+  </head>
+  <body onload="webGLStart();">
+    <canvas id="mycanvas" style="border: none" width="500" height="500"></canvas>
+  </body>
+</html>
