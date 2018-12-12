@@ -1,757 +1,915 @@
+<!DOCTYPE html>
 <html>
-  <head>
+<head>
     <title>Tugas 2</title>
     <meta http-equiv="content-type" content="text/html" charset="ISO-8859-1">
 
     <script type="text/javascript" src="gl-matrix-min.js"></script>
-
+    
     <script id="shader-fs" type="x-shader/x-fragment">
-      precision mediump float;
-      varying vec4 vColor;
-      void main(void) {
-        gl_FragColor = vColor;
-      }
+        precision mediump float;
+        varying vec2 vTextureCoord;
+        varying vec3 vLightWeighting;
+        varying vec4 vColor;
+        uniform float uAlpha;
+        uniform sampler2D uSampler;
+        void main(void) {
+            gl_FragColor = vColor + vec4(texture2D(uSampler, vec2(vTextureCoord.s, vTextureCoord.t)).rgb * vLightWeighting, texture2D(uSampler, vec2(vTextureCoord.s, vTextureCoord.t)).a * uAlpha);
+        }
+    </script>
+
+    <script id="shader-vs" type="x-shader/x-vertex">
+        attribute vec4 aVertexColor;
+        attribute vec3 aVertexPosition;
+        attribute vec3 aVertexNormals;
+        attribute vec2 aTextureCoord;
+        uniform mat4 uMVMatrix;
+        uniform mat4 uPMatrix;
+        uniform mat3 uNMatrix;
+        uniform vec3 uAmbientColor;
+        uniform vec3 uPointLightingLocation;
+        uniform vec3 uPointLightingColor;
+        uniform bool uUseLighting;
+        uniform float uShininess;
+        varying vec2 vTextureCoord;
+        varying vec3 vLightWeighting;
+        varying vec4 vColor;
+        void main(void) {
+            gl_Position = uPMatrix * uMVMatrix * vec4(aVertexPosition, 1.0);
+            vTextureCoord = aTextureCoord;
+            vColor = aVertexColor;
+    
+            if (!uUseLighting) {
+                vLightWeighting = vec3(1.0, 1.0, 1.0);
+            }
+            else {
+                vec3 lightDirection = normalize(uPointLightingLocation - (uMVMatrix * vec4(aVertexPosition, 1.0)).xyz);
+                vec3 transformedNormal = uNMatrix * aVertexNormals;
+                float res = dot(transformedNormal, lightDirection);
+                if (res < 0.0) res = -res;
+                float directionalLightWeighting = max(pow(res, uShininess), 0.0);
+                vLightWeighting = uAmbientColor + uPointLightingColor * directionalLightWeighting;
+            }
+        }
     </script>
     
-    <script id="shader-vs" type="x-shader/x-vertex">
-      attribute vec3 aVertexPosition;
-      attribute vec4 aVertexColor;
-      uniform mat4 uMVMatrix;
-      uniform mat4 uPMatrix;
-      varying vec4 vColor;
-      void main(void) {
-        gl_Position = uPMatrix * uMVMatrix * vec4(aVertexPosition, 1.0);
-        vColor = aVertexColor;
-      }
-    </script>
-    <script type="text/javascript">
-      /** @type {WebGLRenderingContext} */
-      var gl
-      function initGL(canvas) {
-        try {
-          gl = canvas.getContext('webgl')
-          gl.viewportWidth = canvas.width
-          gl.viewportHeight = canvas.height
-        } catch (e) {}
-        if (!gl) {
-          alert('Tidak bisa menginisialisasi WebGL')
+</head>
+<body style="background-color: black;">
+    <canvas id='mycanvas' style="border: none" width="1280" height="640" />
+    <script>
+        /** @type {WebGLRenderingContext} */
+        var gl
+
+        function initGL(){
+            var canvas = document.getElementById('mycanvas')
+            gl = canvas.getContext('webgl')
+            gl.viewportWidth = canvas.width
+            gl.viewportHeight = canvas.height            
+            initShaders = initShaders.bind(this)
+            initShaders()
+            gl.clearColor(0.0, 0.0, 0.0, 1.0)
+            gl.enable(gl.DEPTH_TEST)
         }
-      }
-      function getShader(gl, id) {
-        var shaderScript = document.getElementById(id)
-        if (!shaderScript) {
-          return null
-        }
-        var str = ''
-        var k = shaderScript.firstChild
-        while (k) {
-          if (k.nodeType == 3) {
-            str += k.textContent
-          }
-          k = k.nextSibling
-        }
-        var shader
-        if (shaderScript.type == 'x-shader/x-fragment') {
-          shader = gl.createShader(gl.FRAGMENT_SHADER)
-        } else if (shaderScript.type = 'x-shader/x-vertex') {
-          shader = gl.createShader(gl.VERTEX_SHADER)
-        } else {
-          return null
-        }
-        gl.shaderSource(shader, str)
-        gl.compileShader(shader)
-        if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-          alert(gl.getShaderInfoLog(shader))
-          return null
-        }
-        return shader
-      }
-      var shaderProgram
-      function initShaders() {
-        var fragmentShader = getShader(gl, 'shader-fs')
-        var vertexShader = getShader(gl, 'shader-vs')
-        shaderProgram = gl.createProgram()
-        gl.attachShader(shaderProgram, fragmentShader)
-        gl.attachShader(shaderProgram, vertexShader)
-        gl.linkProgram(shaderProgram)
-        if (!gl.getProgramParameter(shaderProgram, gl.LINK_STATUS)) {
-          alert('Tidak bisa menginisialisasi shaders')
-        }
-        gl.useProgram(shaderProgram)
-        shaderProgram.vertexPositionAttribute = gl.getAttribLocation(shaderProgram, 'aVertexPosition')
-        gl.enableVertexAttribArray(shaderProgram.vertexPositionAttribute)
-        shaderProgram.vertexColorAttribute = gl.getAttribLocation(shaderProgram, 'aVertexColor')
-        gl.enableVertexAttribArray(shaderProgram.vertexColorAttribute)
-        shaderProgram.pMatrixUniform = gl.getUniformLocation(shaderProgram, 'uPMatrix')
-        shaderProgram.mvMatrixUniform = gl.getUniformLocation(shaderProgram, 'uMVMatrix')
-      }
-      var mvMatrix = mat4.create()
-      var mvMatrixStack = []
-      var pMatrix = mat4.create()
-      function mvPushMatrix() {
-        var copy = mat4.create()
-        mat4.copy(copy, mvMatrix)
-        mvMatrixStack.push(copy)
-      }
-      function mvPopMatrix() {
-        if (mvMatrixStack.length == 0) {
-          throw "Tumpukan matriks kosong"
-        }
-        mvMatrix = mvMatrixStack.pop()
-      }
-      function setMatrixUniforms() {
-        gl.uniformMatrix4fv(shaderProgram.pMatrixUniform, false, pMatrix)
-        gl.uniformMatrix4fv(shaderProgram.mvMatrixUniform, false, mvMatrix)
-      }
-      var triangleVertexPositionBuffer
-      var triangleVertexColorBuffer
-      var lineVertexPositionBuffer
-      var lineVertexColorBuffer
-      var zVertices=[]
-      var lnVertices=[]
-      function initBuffers() {
-        // Triangle Position
-        triangleVertexPositionBuffer = gl.createBuffer()
-        gl.bindBuffer(gl.ARRAY_BUFFER, triangleVertexPositionBuffer)
-        var vertices = [
-          -1.0, 1.0, 0.25,
-            1.0, 1.0, 0.25,
-            -1.0, 0.65, 0.25,
-            1.0, 0.65, 0.25,
 
-            1.0, 0.65, 0.25,
-            0.4, 0.65, 0.25,
-            -0.4, -0.65, 0.25,
-            -1.0, -0.65, 0.25,
-
-            // 2
-
-            -1.0, -0.65, 0.25,
-            1.0, -0.65, 0.25,
-            -1.0, -1.0, 0.25,
-            1.0, -1.0, 0.25,
-
-            1.0, -1.0, 0.25,
-            1.0, -1.0, -0.25,
-            -1.0, -1.0, -0.25,
-            1.0, -1.0, 0.25,
-            -1.0, -1.0, 0.25,
-
-            // 3
-
-            -1.0, -1.0, 0.25,
-            -1.0, -0.65, 0.25,
-            -1.0, -1.0, -0.25,
-            -1.0, -0.65, -0.25,
-
-            -1.0, -0.65, -0.25,
-            1.0, -0.65, -0.25,
-            -1.0, -1.0, -0.25,
-            1.0, -1.0, -0.25,
-
-            // 4
-
-            1.0, -1.0, -0.25,
-            1.0, -0.65, -0.25,
-            1.0, -1.0, 0.25,
-            1.0, -0.65, 0.25,
-
-            1.0, -0.65, 0.25,
-            -0.4, -0.65, 0.25,
-            1.0, -0.65, -0.25,
-            -0.4, -0.65, -0.25,
-
-            // 5
-
-            -0.4, -0.65, -0.25,
-            -0.4, -0.65, 0.25,
-            1.0, 0.65, -0.25,
-            1.0, 0.65, 0.25,
-
-            1.0, 0.65, 0.25,
-            1.0, 0.65, -0.25,
-            1.0, 1.0, 0.25,
-            1.0, 1.0, -0.25,
-
-            // 6
-
-            1.0, 1.0, -0.25,
-            1.0, 1.0, 0.25,
-            -1.0, 1.0, -0.25,
-            -1.0, 1.0, 0.25,
-
-            -1.0, 1.0, 0.25,
-            -1.0, 1.0, -0.25,
-            -1.0, 0.65, 0.25,
-            -1.0, 0.65, -0.25,
-
-            // 7
-
-            -1.0, 0.65, -0.25,
-            -1.0, 0.65, 0.25,
-            0.4, 0.65, -0.25,
-            0.4, 0.65, 0.25,
-
-            0.4, 0.65, 0.25,
-            0.4, 0.65, -0.25,
-            -1.0, -0.65, 0.25,
-            -1.0, -0.65, -0.25,
-
-            // 8
-
-            -1.0, -0.65, -0.25,
-            -0.4, -0.65, -0.25,
-            0.4, 0.65, -0.25,
-            1.0, 0.65, -0.25,
-
-            1.0, 0.65, -0.25,
-            -1.0, 0.65, -0.25,
-            1.0, 1.0, -0.25,
-            -1.0, 1.0, -0.25,
-        ]
-        for(var i=0;i<vertices.length/3;i++){
-          zVertices.push([vertices[i*3],vertices[i*3+1],vertices[i*3+2], 1.0])
-        }
-        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.STATIC_DRAW)
-        triangleVertexPositionBuffer.itemSize = 3
-        triangleVertexPositionBuffer.numItems = vertices.length / 3
-        triangleVertexColorBuffer = gl.createBuffer()
-        gl.bindBuffer(gl.ARRAY_BUFFER, triangleVertexColorBuffer)
-        var colors = [
-          0.84, 0.1, 0.27, 1.0,
-          0.81, 0.42, 0.52, 1.0,
-          0.84, 0.1, 0.27, 1.0,
-          0.81, 0.42, 0.52, 1.0,
-
-          0.81, 0.42, 0.52, 1.0,
-          0.81, 0.42, 0.52, 1.0,
-          0.84, 0.1, 0.27, 1.0,
-          0.84, 0.1, 0.27, 1.0,
-
-          // 2
-
-          0.84, 0.1, 0.27, 1.0,
-          0.84, 0.1, 0.27, 1.0,
-          0.81, 0.42, 0.52, 1.0,
-          0.81, 0.42, 0.52, 1.0,
-
-          // bawah
-          0.84, 0.1, 0.27, 1.0,
-          0.84, 0.1, 0.27, 1.0,
-          0.84, 0.1, 0.27, 1.0,
-          0.84, 0.1, 0.27, 1.0,
-          0.84, 0.1, 0.27, 1.0,
-
-          // 3
-
-          // kiri bawah
-          0.93, 0.41, 0.53, 1.0,
-          0.93, 0.41, 0.53, 1.0,
-          0.93, 0.41, 0.53, 1.0,
-          0.93, 0.41, 0.53, 1.0,
-
-          // belakang bawah
-          0.84, 0.1, 0.27, 1.0,
-          0.84, 0.1, 0.27, 1.0,
-          0.81, 0.42, 0.52, 1.0,
-          0.81, 0.42, 0.52, 1.0,
-
-          // 4
-
-          // kanan bawah
-          0.93, 0.41, 0.53, 1.0,
-          0.93, 0.41, 0.53, 1.0,
-          0.93, 0.41, 0.53, 1.0,
-          0.93, 0.41, 0.53, 1.0,
-
-          // another alas, kek bawah
-          0.2, 0.04, 0.05, 1.0,
-          0.2, 0.04, 0.05, 1.0,
-          0.2, 0.04, 0.05, 1.0,
-          0.2, 0.04, 0.05, 1.0,
-
-          // 5
-
-          // miring 1
-          0.58, 0.05, 0.09, 1.0,
-          0.58, 0.05, 0.09, 1.0,
-          0.58, 0.05, 0.09, 1.0,
-          0.58, 0.05, 0.09, 1.0,
-
-          // kanan atas
-          0.93, 0.41, 0.53, 1.0,
-          0.93, 0.41, 0.53, 1.0,
-          0.93, 0.41, 0.53, 1.0,
-          0.93, 0.41, 0.53, 1.0,
-
-          // 6
-
-          // atas
-          0.84, 0.1, 0.27, 1.0,
-          0.84, 0.1, 0.27, 1.0,
-          0.84, 0.1, 0.27, 1.0,
-          0.84, 0.1, 0.27, 1.0,
-
-          // kiri atas
-          0.93, 0.41, 0.53, 1.0,
-          0.93, 0.41, 0.53, 1.0,
-          0.93, 0.41, 0.53, 1.0,
-          0.93, 0.41, 0.53, 1.0,
-
-          // 7
-
-          // another kek bawah
-          0.2, 0.04, 0.05, 1.0,
-          0.2, 0.04, 0.05, 1.0,
-          0.2, 0.04, 0.05, 1.0,
-          0.2, 0.04, 0.05, 1.0,
-
-          // miring 2
-          0.58, 0.05, 0.09, 1.0,
-          0.58, 0.05, 0.09, 1.0,
-          0.58, 0.05, 0.09, 1.0,
-          0.58, 0.05, 0.09, 1.0,
-
-          // 8
-
-          0.84, 0.1, 0.27, 1.0,
-          0.84, 0.1, 0.27, 1.0,
-          0.81, 0.42, 0.52, 1.0,
-          0.81, 0.42, 0.52, 1.0,
-
-          0.81, 0.42, 0.52, 1.0,
-          0.84, 0.1, 0.27, 1.0,
-          0.81, 0.42, 0.52, 1.0,
-          0.84, 0.1, 0.27, 1.0,
-        ]
-        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(colors), gl.STATIC_DRAW)
-        triangleVertexColorBuffer.itemSize = 4
-        triangleVertexColorBuffer.numItems = vertices.length / 4
-
-        //cube
-        lineVertexPositionBuffer = gl.createBuffer()
-        gl.bindBuffer(gl.ARRAY_BUFFER, lineVertexPositionBuffer)
-        vertices = [
-          -5.0, -5.0, 5.0,
-            -5.0, 5.0, 5.0,       //a-e
-
-            -5.0, 5.0, 5.0,
-            5.0, 5.0, 5.0,        //e-f
-
-            5.0, 5.0, 5.0,
-            5.0, -5.0, 5.0,       //f-b
-
-            5.0, -5.0, 5.0,
-            -5.0, -5.0, 5.0,      //b-a
-
-            -5.0, -5.0, -5.0,
-            -5.0, 5.0, -5.0,      //d-h
-
-            -5.0, 5.0, -5.0,
-            5.0, 5.0, -5.0,       //h-g
-
-            5.0, 5.0, -5.0,
-            5.0, -5.0, -5.0,      //g-c
-
-            5.0, -5.0, -5.0,
-            -5.0, -5.0, -5.0,
-
-            -5.0, -5.0, 5.0,
-            -5.0, -5.0, -5.0,
-
-            -5.0, 5.0, 5.0,
-            -5.0, 5.0, -5.0,
-
-            5.0, 5.0, 5.0,
-            5.0, 5.0, -5.0,
-            
-            5.0, -5.0, 5.0,
-            5.0, -5.0, -5.0,
-        ]
-        lnVertices.push([-5.0, -5.0, 5.0, 1.0])
-        lnVertices.push([5.0, -5.0, 5.0, 1.0])
-        lnVertices.push([5.0, -5.0, -5.0, 1.0])
-        lnVertices.push([-5.0, -5.0, -5.0, 1.0])
-        lnVertices.push([-5.0, 5.0, 5.0, 1.0])
-        lnVertices.push([5.0, 5.0, 5.0, 1.0])
-        lnVertices.push([5.0, 5.0, -5.0, 1.0])
-        lnVertices.push([-5.0, 5.0, -5.0, 1.0])
-        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.STATIC_DRAW)
-        lineVertexPositionBuffer.itemSize = 3
-        lineVertexPositionBuffer.numItems = vertices.length / 3
-        // line Color
-        lineVertexColorBuffer = gl.createBuffer()
-        gl.bindBuffer(gl.ARRAY_BUFFER, lineVertexColorBuffer)
-        colors=[]
-        for (var i=0; i < vertices.length / 3; i++) {
-            colors = colors.concat([1.0, 1.0, 1.0, 1.0]);
-        }
-        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(colors), gl.STATIC_DRAW)
-        lineVertexColorBuffer.itemSize = 4
-        lineVertexColorBuffer.numItems = vertices.length / 4
-      }
-      var rTri=0
-      var transTri=[0.0, 0.0, 0.0]
-      var flag=1
-      var colorFlag=1
-      function drawScene() {
-        zColor()
-        gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight)
-        gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
-        mat4.perspective(pMatrix, glMatrix.toRadian(45), gl.viewportWidth / gl.viewportHeight, 0.1, 100.0)
-        mat4.identity(mvMatrix)
-        mat4.translate(mvMatrix, mvMatrix, [0.0, 0.0, -20.0])
-        mvPushMatrix()
-        gl.bindBuffer(gl.ARRAY_BUFFER, lineVertexPositionBuffer)
-        gl.vertexAttribPointer(shaderProgram.vertexPositionAttribute, lineVertexPositionBuffer.itemSize, gl.FLOAT, false, 0, 0)
-        gl.bindBuffer(gl.ARRAY_BUFFER, lineVertexColorBuffer)
-        gl.vertexAttribPointer(shaderProgram.vertexColorAttribute, lineVertexColorBuffer.itemSize, gl.FLOAT, false, 0, 0)
-        var lineNow=[]
-        for(var i=0;i<lnVertices.length;i++){
-          var temp=matMul(mvMatrix,lnVertices[i])
-          lineNow.push(temp)
-        }
-        setMatrixUniforms()
-        gl.drawArrays(gl.LINES, 0, lineVertexPositionBuffer.numItems)
-        mvPopMatrix()
-        mat4.translate(mvMatrix, mvMatrix, transTri)
-        mvPushMatrix()
-        mat4.rotate(mvMatrix, mvMatrix, glMatrix.toRadian(rTri), [0.0, 1.0, 0.0])
-        gl.bindBuffer(gl.ARRAY_BUFFER, triangleVertexPositionBuffer)
-        gl.vertexAttribPointer(shaderProgram.vertexPositionAttribute, triangleVertexPositionBuffer.itemSize, gl.FLOAT, false, 0, 0)
-        gl.bindBuffer(gl.ARRAY_BUFFER, triangleVertexColorBuffer)
-        gl.vertexAttribPointer(shaderProgram.vertexColorAttribute, triangleVertexColorBuffer.itemSize, gl.FLOAT, false, 0, 0)
-        var zNow=[]
-        for(var i=0;i<zVertices.length; i++) {
-          var temp = matMul(mvMatrix, zVertices[i])
-          zNow.push(temp)
-        }
-        detectCols(zNow,lineNow)
-        setMatrixUniforms()
-        gl.drawArrays(gl.TRIANGLE_STRIP, 0, triangleVertexPositionBuffer.numItems)
-        mvPopMatrix()
-      }
-      function matMul(m,v){
-        var x=m[0]*v[0]+m[4]*v[1]+m[8]*v[2]+m[12]*v[3]
-        var y=m[1]*v[0]+m[5]*v[1]+m[9]*v[2]+m[13]*v[3]
-        var z=m[2]*v[0]+m[6]*v[1]+m[10]*v[2]+m[14]*v[3]
-        var i=m[3]*v[0]+m[7]*v[1]+m[11]*v[2]+m[15]*v[3]
-        return [x,y,z,i]
-      }
-      var dirTri=[]
-      var speed=0.02
-      dirTri[0]=speed
-      dirTri[1]=speed
-      dirTri[2]=speed
-      function detectCols(z,ln){
-        for(var i=0;i<z.length;i++){
-          if(z[i][0]>=ln[5][0]){
-            if(dirTri[0]>0){
-              dirTri[0]=dirTri[0]*(-1.0)
-              flag*=-1
-              colorFlag*=-1
-              zMoves()
+        function getShader(gl, id) {
+            var shaderScript = document.getElementById(id)
+            if (!shaderScript) {
+              return null
             }
-            return
-          }
-          if(z[i][0]<=ln[4][0]){
-            if(dirTri[0]<0){
-              dirTri[0]=dirTri[0]*(-1.0)
-              flag*=-1
-              colorFlag*=-1
-              zMoves()
+            var str = ''
+            var k = shaderScript.firstChild
+            while(k) {
+                if(k.nodeType === 3){
+                    str += k.textContent
+                }
+                k = k.nextSibling
             }
-            return
-          }
-          if(z[i][1]>=ln[5][1]){
-            if(dirTri[1]>0){
-              dirTri[1]=dirTri[1]*(-1.0)
-              zMoves()
+            var shader
+            if (shaderScript.type == 'x-shader/x-fragment'){
+                shader = gl.createShader(gl.FRAGMENT_SHADER)
+            } else if ( shaderScript.type == 'x-shader/x-vertex') {
+                shader = gl.createShader(gl.VERTEX_SHADER)
+            } else {
+                return null
             }
-            return
-          }
-          if(z[i][1]<=ln[1][1]){
-            if(dirTri[1]<0){
-              dirTri[1]=dirTri[1]*(-1.0)
-              zMoves()
+            gl.shaderSource(shader, str)
+            gl.compileShader(shader)
+            if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+                alert(gl.getShaderInfoLog(shader))
+                return null
             }
-            return
-          }
-          if(z[i][2]>=ln[4][2]){
-            if(dirTri[2]>0){
-              dirTri[2]=dirTri[2]*(-1.0)
-              zMoves()
-            }
-            return
-          }
-          if(z[i][2]<=ln[7][2]){
-            if(dirTri[2]<0){
-              dirTri[2]=dirTri[2]*(-1.0)
-              zMoves()
-            }
-            return
-          }
+            return shader
         }
-      }
-      function zColor()
-      {
-        if(colorFlag==-1)
-        {
-          gl.bindBuffer(gl.ARRAY_BUFFER, triangleVertexColorBuffer)
-          var colors = [
-          // depan
-          0.99, 0.73, 0.7, 1.0,
-          0.7, 0.23, 0.28, 1.0,
-          0.99, 0.73, 0.7, 1.0,
-          0.7, 0.23, 0.28, 1.0,
 
-          0.7, 0.23, 0.28, 1.0,
-          0.7, 0.23, 0.28, 1.0,
-          0.99, 0.73, 0.7, 1.0,
-          0.99, 0.73, 0.7, 1.0,
+        var shaderProgram
 
-          // 2
+        function initShaders() {
+            var fragmentShader = getShader(gl, 'shader-fs')
+            var vertexShader = getShader(gl, 'shader-vs')
 
-          0.99, 0.73, 0.7, 1.0,
-          0.99, 0.73, 0.7, 1.0,
-          0.7, 0.23, 0.28, 1.0,
-          0.7, 0.23, 0.28, 1.0,
+            shaderProgram = gl.createProgram()
+            gl.attachShader(shaderProgram, vertexShader)
+            gl.attachShader(shaderProgram, fragmentShader)
+            gl.linkProgram(shaderProgram)
 
-          // bawah
-          0.7, 0.23, 0.28, 1.0,
-          0.7, 0.23, 0.28, 1.0,
-          0.7, 0.23, 0.28, 1.0,
-          0.7, 0.23, 0.28, 1.0,
-          0.7, 0.23, 0.28, 1.0,
+            if ( !gl.getProgramParameter(shaderProgram, gl.LINK_STATUS)) {
+                alert("Tidak bisa menginisialisasi Shader")
+            }
 
-          // 3
+            gl.useProgram(shaderProgram)
 
-          // kiri bawah
-          0.93, 0.41, 0.53, 1.0,
-          0.93, 0.41, 0.53, 1.0,
-          0.93, 0.41, 0.53, 1.0,
-          0.93, 0.41, 0.53, 1.0,
-
-          // belakang bawah
-          0.99, 0.73, 0.7, 1.0,
-          0.99, 0.73, 0.7, 1.0,
-          0.7, 0.23, 0.28, 1.0,
-          0.7, 0.23, 0.28, 1.0,
-
-          // 4
-
-          // kanan bawah
-          0.93, 0.41, 0.53, 1.0,
-          0.93, 0.41, 0.53, 1.0,
-          0.93, 0.41, 0.53, 1.0,
-          0.93, 0.41, 0.53, 1.0,
-
-          // another alas, kek bawah
-          0.7, 0.23, 0.28, 1.0,
-          0.7, 0.23, 0.28, 1.0,
-          0.7, 0.23, 0.28, 1.0,
-          0.7, 0.23, 0.28, 1.0,
-
-          // 5
-
-          // miring 1
-          0.55, 0.18, 0.22, 1.0,
-          0.55, 0.18, 0.22, 1.0,
-          0.55, 0.18, 0.22, 1.0,
-          0.55, 0.18, 0.22, 1.0,
-
-          // kanan atas
-          0.93, 0.41, 0.53, 1.0,
-          0.93, 0.41, 0.53, 1.0,
-          0.93, 0.41, 0.53, 1.0,
-          0.93, 0.41, 0.53, 1.0,
-
-          // 6
-
-          // atas
-          0.7, 0.23, 0.28, 1.0,
-          0.7, 0.23, 0.28, 1.0,
-          0.7, 0.23, 0.28, 1.0,
-          0.7, 0.23, 0.28, 1.0,
-
-          // kiri atas
-          0.93, 0.41, 0.53, 1.0,
-          0.93, 0.41, 0.53, 1.0,
-          0.93, 0.41, 0.53, 1.0,
-          0.93, 0.41, 0.53, 1.0,
-
-          // 7
-
-          // another kek bawah
-          0.7, 0.23, 0.28, 1.0,
-          0.7, 0.23, 0.28, 1.0,
-          0.7, 0.23, 0.28, 1.0,
-          0.7, 0.23, 0.28, 1.0,
-
-          // miring 2
-          0.55, 0.18, 0.22, 1.0,
-          0.55, 0.18, 0.22, 1.0,
-          0.55, 0.18, 0.22, 1.0,
-          0.55, 0.18, 0.22, 1.0,
-
-          // 8
-
-          0.99, 0.73, 0.7, 1.0,
-          0.99, 0.73, 0.7, 1.0,
-          0.7, 0.23, 0.28, 1.0,
-          0.7, 0.23, 0.28, 1.0,
-
-          0.7, 0.23, 0.28, 1.0,
-          0.99, 0.73, 0.7, 1.0,
-          0.7, 0.23, 0.28, 1.0,
-          0.99, 0.73, 0.7, 1.0,
-          ]
-          gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(colors), gl.STATIC_DRAW)
+            shaderProgram.vertexColorAttribute = gl.getAttribLocation(shaderProgram, "aVertexColor")
+            gl.enableVertexAttribArray(shaderProgram.vertexColorAttribute)
+           
+            shaderProgram.vertexPositionAttribute = gl.getAttribLocation(shaderProgram, "aVertexPosition")
+            gl.enableVertexAttribArray(shaderProgram.vertexPositionAttribute)
+            shaderProgram.vertexNormalAttribute = gl.getAttribLocation(shaderProgram, "aVertexNormals")
+            gl.enableVertexAttribArray(shaderProgram.vertexNormalAttribute)
+            shaderProgram.textureCoordAttribute = gl.getAttribLocation(shaderProgram, "aTextureCoord")
+            gl.enableVertexAttribArray(shaderProgram.textureCoordAttribute)
+            shaderProgram.pMatrixUniform = gl.getUniformLocation(shaderProgram, "uPMatrix")
+            shaderProgram.mvMatrixUniform = gl.getUniformLocation(shaderProgram, "uMVMatrix")
+            shaderProgram.nMatrixUniform = gl.getUniformLocation(shaderProgram, "uNMatrix")
+            shaderProgram.samplerUniform = gl.getUniformLocation(shaderProgram, "uSampler")
+            shaderProgram.useLightingUniform = gl.getUniformLocation(shaderProgram, "uUseLighting")
+            shaderProgram.ambientColorUniform = gl.getUniformLocation(shaderProgram, "uAmbientColor")
+            shaderProgram.lightingDirectionUniform = gl.getUniformLocation(shaderProgram, "uLightingDirection")
+            shaderProgram.pointLightingLocationUniform = gl.getUniformLocation(shaderProgram, "uPointLightingLocation")
+            shaderProgram.pointLightingColorUniform = gl.getUniformLocation(shaderProgram, "uPointLightingColor")
+            shaderProgram.alphaUniform = gl.getUniformLocation(shaderProgram, "uAlpha")
+            shaderProgram.shiniUniform = gl.getUniformLocation(shaderProgram, "uShininess")
         }
-        else{
-          gl.bindBuffer(gl.ARRAY_BUFFER, triangleVertexColorBuffer)
-        var colors = [
-          0.84, 0.1, 0.27, 1.0,
-          0.81, 0.42, 0.52, 1.0,
-          0.84, 0.1, 0.27, 1.0,
-          0.81, 0.42, 0.52, 1.0,
 
-          0.81, 0.42, 0.52, 1.0,
-          0.81, 0.42, 0.52, 1.0,
-          0.84, 0.1, 0.27, 1.0,
-          0.84, 0.1, 0.27, 1.0,
-
-          // 2
-
-          0.84, 0.1, 0.27, 1.0,
-          0.84, 0.1, 0.27, 1.0,
-          0.81, 0.42, 0.52, 1.0,
-          0.81, 0.42, 0.52, 1.0,
-
-          // bawah
-          0.84, 0.1, 0.27, 1.0,
-          0.84, 0.1, 0.27, 1.0,
-          0.84, 0.1, 0.27, 1.0,
-          0.84, 0.1, 0.27, 1.0,
-          0.84, 0.1, 0.27, 1.0,
-
-          // 3
-
-          // kiri bawah
-          0.93, 0.41, 0.53, 1.0,
-          0.93, 0.41, 0.53, 1.0,
-          0.93, 0.41, 0.53, 1.0,
-          0.93, 0.41, 0.53, 1.0,
-
-          // belakang bawah
-          0.84, 0.1, 0.27, 1.0,
-          0.84, 0.1, 0.27, 1.0,
-          0.81, 0.42, 0.52, 1.0,
-          0.81, 0.42, 0.52, 1.0,
-
-          // 4
-
-          // kanan bawah
-          0.93, 0.41, 0.53, 1.0,
-          0.93, 0.41, 0.53, 1.0,
-          0.93, 0.41, 0.53, 1.0,
-          0.93, 0.41, 0.53, 1.0,
-
-          // another alas, kek bawah
-          0.2, 0.04, 0.05, 1.0,
-          0.2, 0.04, 0.05, 1.0,
-          0.2, 0.04, 0.05, 1.0,
-          0.2, 0.04, 0.05, 1.0,
-
-          // 5
-
-          // miring 1
-          0.58, 0.05, 0.09, 1.0,
-          0.58, 0.05, 0.09, 1.0,
-          0.58, 0.05, 0.09, 1.0,
-          0.58, 0.05, 0.09, 1.0,
-
-          // kanan atas
-          0.93, 0.41, 0.53, 1.0,
-          0.93, 0.41, 0.53, 1.0,
-          0.93, 0.41, 0.53, 1.0,
-          0.93, 0.41, 0.53, 1.0,
-
-          // 6
-
-          // atas
-          0.84, 0.1, 0.27, 1.0,
-          0.84, 0.1, 0.27, 1.0,
-          0.84, 0.1, 0.27, 1.0,
-          0.84, 0.1, 0.27, 1.0,
-
-          // kiri atas
-          0.93, 0.41, 0.53, 1.0,
-          0.93, 0.41, 0.53, 1.0,
-          0.93, 0.41, 0.53, 1.0,
-          0.93, 0.41, 0.53, 1.0,
-
-          // 7
-
-          // another kek bawah
-          0.2, 0.04, 0.05, 1.0,
-          0.2, 0.04, 0.05, 1.0,
-          0.2, 0.04, 0.05, 1.0,
-          0.2, 0.04, 0.05, 1.0,
-
-          // miring 2
-          0.58, 0.05, 0.09, 1.0,
-          0.58, 0.05, 0.09, 1.0,
-          0.58, 0.05, 0.09, 1.0,
-          0.58, 0.05, 0.09, 1.0,
-
-          // 8
-
-          0.84, 0.1, 0.27, 1.0,
-          0.84, 0.1, 0.27, 1.0,
-          0.81, 0.42, 0.52, 1.0,
-          0.81, 0.42, 0.52, 1.0,
-
-          0.81, 0.42, 0.52, 1.0,
-          0.84, 0.1, 0.27, 1.0,
-          0.81, 0.42, 0.52, 1.0,
-          0.84, 0.1, 0.27, 1.0,
-        ]
-        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(colors), gl.STATIC_DRAW)
+        function handleLoadedTexture(textures) {
+            gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true)
+            gl.bindTexture(gl.TEXTURE_2D, textures)
+           
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, textures.image)
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
+           
+            textures.loaded = true
         }
-      }
-      var lastTime = 0
-      function animate() {
-        var timeNow = new Date().getTime()
-        if (lastTime != 0) {
-          var elapsed = timeNow - lastTime          
-          rTri += flag*(200 * elapsed) / 1000.0
-          zMoves()
+
+        var mvMatrix1 = mat4.create()
+        var pMatrix1 = mat4.create()
+        var mvMatrixStack1 = []
+        var modelBuffer = []
+
+        function mvPushMatrix(x) {
+            var copy = mat4.create()
+            var mvMatrix
+            var mvMatrixStack
+            if (x==1) {
+                mvMatrix=mvMatrix1
+                mvMatrixStack=mvMatrixStack1
+            }
+            mat4.copy(copy, mvMatrix)
+            mvMatrixStack.push(copy)
         }
-        lastTime = timeNow
-      }
-      function zMoves(){
-        transTri[0]+=dirTri[0]
-        transTri[1]+=dirTri[1]
-        transTri[2]+=dirTri[2]
-      }
-      function tick() {
-        requestAnimationFrame(tick)
-        drawScene()
-        animate()
-      }
-      function webGLStart() {
-        var canvas = document.getElementById('mycanvas')
-        initGL(canvas)
-        initShaders()
-        initBuffers()
-        gl.clearColor(0.0, 0.0, 0.0, 1.0)
-        gl.enable(gl.DEPTH_TEST)
+
+        function mvPopMatrix(x) {
+            var mvMatrixStack
+            if (x==1) {
+                mvMatrixStack = mvMatrixStack1
+                mvMatrix1 = mvMatrixStack.pop()
+            }
+        }
+
+        function setMatrixUniforms(x) {
+            var normalMatrix = mat3.create()
+            var mvMatrix, pMatrix
+            if (x==1) {
+                mvMatrix = mvMatrix1
+                pMatrix = pMatrix1
+            }
+            mat3.normalFromMat4(normalMatrix, mvMatrix)
+            gl.uniformMatrix4fv(shaderProgram.pMatrixUniform, false, pMatrix)
+            gl.uniformMatrix4fv(shaderProgram.mvMatrixUniform, false, mvMatrix)
+            gl.uniformMatrix3fv(shaderProgram.nMatrixUniform, false, normalMatrix)
+        }
+
+        function createModel(model) {
+            var buffer = {}
+            if(model.type === 'Shape') {
+                buffer.id = model.id
+                buffer.model2 = model
+                buffer.position = gl.createBuffer()
+                gl.bindBuffer(gl.ARRAY_BUFFER, buffer.position)
+                gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(model.vertices), gl.STATIC_DRAW)
+                buffer.position.itemSize = 3
+                buffer.position.numItems = model.vertices.length / buffer.position.itemSize
+
+                buffer.normal = gl.createBuffer()
+                gl.bindBuffer(gl.ARRAY_BUFFER, buffer.normal)
+                gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(model.normals), gl.STATIC_DRAW)
+                buffer.normal.itemSize = 3
+                buffer.normal.numItems = model.normals.length / buffer.normal.itemSize
+
+                buffer.indices = gl.createBuffer()
+                gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buffer.indices)
+                gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(model.indices), gl.STATIC_DRAW)
+                buffer.indices.itemSize = 1
+                buffer.indices.numItems = model.indices.length / buffer.indices.itemSize
+
+                if(model.textureSrc !== undefined) {
+                    buffer.texture = gl.createTexture()
+                    buffer.texture.loaded = false
+                    buffer.texture.image = new Image()
+                    buffer.texture.image.onload = function () {
+                        handleLoadedTexture(buffer.texture)
+                    }
+                    buffer.texture.image.src = model.textureSrc
+                } else {
+                    buffer.texture = gl.createTexture()
+                    buffer.texture.loaded = true
+                    buffer.texture.image = new Image()
+                }
+
+                buffer.textureCoord = gl.createBuffer()
+                gl.bindBuffer(gl.ARRAY_BUFFER, buffer.textureCoord)
+                gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(model.textureCoord), gl.STATIC_DRAW)
+                buffer.textureCoord.itemSize = 2
+                buffer.textureCoord.numItems = model.textureCoord.length / buffer.textureCoord.itemSize
+
+                buffer.color = gl.createBuffer()
+                gl.bindBuffer(gl.ARRAY_BUFFER, buffer.color)
+                gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(model.colors), gl.STATIC_DRAW)
+                buffer.color.itemSize = 4
+                buffer.color.numItems = model.colors.length / buffer.color.itemSize
+
+                modelBuffer.push(buffer)
+            } else {
+                gl.uniform1i(shaderProgram.useLightingUniform, 1)
+                gl.uniform1f(shaderProgram.shiniUniform, 5.0)
+                buffer.model2 = model;
+
+                modelBuffer.push(buffer)
+            }
+        }
+
+        var eventAfterRender = new CustomEvent('after-render')
+        var eventLightFollow = new CustomEvent('light-follow')
+
+        function drawScene(){
+            gl.enable(gl.SCISSOR_TEST);
+
+            var width = gl.viewportWidth;
+            var height = gl.viewportHeight;
+
+            for(var a = 0; a < 2; a++){
+                for(var b = 0; b < 2; b++){
+                    if( a == 0 && b == 0){
+                        drawScene1(0 * width / 2, 1 * height / 2, width / 2, height / 2)
+                    }
+                    if( a == 0 && b == 1){
+                        drawScene1(1 * width / 2, 1 * height / 2, width / 2, height / 2)
+                    }
+                    if( a == 1 && b == 0){
+                        drawScene1(0 * width / 2, 0 * height / 2, width / 2, height / 2)
+                    }
+                    if( a == 1 && b == 1){
+                        drawScene1(1 * width / 2, 0 * height / 2, width / 2, height / 2)
+                    }
+                }
+            }
+        }
+
+        function drawScene1(sw, sh, ew, eh) {
+            gl.scissor(sw, sh, ew, eh)
+            gl.viewport(sw, sh, ew, eh)
+            gl.clear(gl.COLOR_BUFFER_BIT, gl.DEPTH_BUFFER_BIT)
+            mat4.perspective(pMatrix1, glMatrix.toRadian(45), gl.viewportWidth/gl.viewportHeight, 0.1, 1000.0)
+            mat4.identity(mvMatrix1)
+            mat4.translate(mvMatrix1, mvMatrix1, [0.0, 0.0,-50.0])
+            for(var i = 0; i < modelBuffer.length; i++) {
+                mvPushMatrix(1)
+                var o = modelBuffer[i]
+                if(o.model2.type === 'Shape') {
+                    var e = new CustomEvent(o.id)
+                    document.dispatchEvent(e)
+                    mat4.multiply(mvMatrix1, mvMatrix1, o.model2.matrixWorld)
+                    gl.bindBuffer(gl.ARRAY_BUFFER, o.position)
+                    gl.vertexAttribPointer(shaderProgram.vertexPositionAttribute, o.position.itemSize, gl.FLOAT, false, 0, 0)
+                    gl.bindBuffer(gl.ARRAY_BUFFER, o.color)
+                    gl.vertexAttribPointer(shaderProgram.vertexColorAttribute, o.color.itemSize, gl.FLOAT, false, 0, 0)
+                    gl.bindBuffer(gl.ARRAY_BUFFER, o.normal)
+                    gl.vertexAttribPointer(shaderProgram.vertexNormalAttribute, o.normal.itemSize, gl.FLOAT, false, 0, 0)
+                    gl.bindBuffer(gl.ARRAY_BUFFER, o.textureCoord)
+                    gl.vertexAttribPointer(shaderProgram.textureCoordAttribute, o.textureCoord.itemSize, gl.FLOAT, false, 0, 0)
+                    if(o.textureSrc !== undefined){
+                        gl.activeTexture(gl.TEXTURE0)
+                        gl.bindTexture(gl.TEXTURE_2D, o.texture)
+                        gl.uniform1i(shaderProgram.samplerUniform, 0)
+                    }
+                    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, o.indices)
+                    var temp = []
+                    for(let i = 0; i < o.model2.vertices2.length; i++){
+                        temp.push(multiply(mvMatrix1, o.model2.vertices2[i]))
+                    }
+                    o.model2.position = JSON.parse(JSON.stringify(temp))
+                    setMatrixUniforms(1)
+                    gl.drawElements(gl.TRIANGLES, o.indices.numItems, gl.UNSIGNED_SHORT, 0)
+                } else if (o.model2.type === 'ambient-light') {
+                    gl.uniform3f(shaderProgram.ambientColorUniform, o.model2.color.r, o.model2.color.g, o.model2.color.b)
+                } else if (o.model2.type === 'point-light') {
+                    document.dispatchEvent(eventLightFollow)
+                    gl.uniform3f(shaderProgram.pointLightingLocationUniform, o.model2.position.x, o.model2.position.y, o.model2.position.z)
+                    gl.uniform3f(shaderProgram.pointLightingColorUniform, o.model2.color.r, o.model2.color.g, o.model2.color.b)
+                }
+                mvPopMatrix(1)
+            }
+            document.dispatchEvent(eventAfterRender)
+        }
+
+        function Shape(){
+            this.id = btoa(Math.random()).substring(0,12)
+            this.matrixWorld = mat4.create()
+            this.temporaryMatrixWorld = undefined
+            this.rotation = {
+                x2 : 0,
+                y2 : 0,
+                z2 : 0,
+                updateMatrixWorld : function(deg, array) {
+                    mat4.rotate(this.matrixWorld, this.matrixWorld, glMatrix.toRadian(deg), array)
+                }.bind(this)
+            }
+            Object.defineProperties(this.rotation, {
+                x : {
+                    get : function () {
+                        return this.x2
+                    },
+                    set: function (value) {
+                        this.x2 = value
+                        this.updateMatrixWorld(this.x2, [1, 0, 0])
+                    }
+                },
+                y : {
+                    get : function () {
+                        return this.y2
+                    },
+                    set: function (value) {
+                        this.y2 = value
+                        this.updateMatrixWorld(this.y2, [0, 1, 0])
+                    }
+                },
+                z : {
+                    get : function () {
+                        return this.z2
+                    },
+                    set: function (value) {
+                        this.z2 = value
+                        this.updateMatrixWorld(this.z2, [0, 0, 1])
+                    }
+                },
+            })
+
+            this.translate = {
+                to : [0, 0, 0],
+                updateMatrixWorld : function() {
+                    mat4.translate(this.matrixWorld, this.matrixWorld, this.translate.to)
+                }.bind(this)
+            }
+            Object.defineProperties(this.translate,{
+                mat : {
+                    get : function () {
+                        return this.to
+                    },
+                    set : function (value) {
+                        this.to = value
+                        this.updateMatrixWorld()
+                    },
+                },
+            })
+
+            this.move = {
+                direction : [0, 0, 0],
+                vector : function(value) {
+                    this.direction[0] += value[0]
+                    this.direction[1] += value[1]
+                    this.direction[2] += value[2]
+                    this.updateMatrixWorld()
+                },
+                updateMatrixWorld : function() {
+                    mat4.translate(this.matrixWorld, this.matrixWorld, this.move.direction)
+                }.bind(this)
+            }
+        }
+
+        function cubeShape(depth, width, height, step = 1){
+            Shape.call(this)
+            this.type = 'Shape'
+            this.indices = []
+            this.vertices = []
+            this.vertices2 = []
+            this.normals = []
+            this.colors = []
+            this.textureCoord = []
+            this.textureSrc = undefined
+            this.position = []
+            this.step = step
+            var d = depth / 2
+            var w = width / 2
+            var h = height / 2
+            var counter = 0
+            for(var i = 0; i < 6; i+=step, counter++){
+                for(var j = 0; j < 4; j++){
+                    var x = d, y = w, z = h
+                    if(i & 4){
+                        x *= (i&1)? -1 : 1
+                        y *= (j&2)? 1 : -1
+                        z *= (j&1)? 1 : -1
+                        this.normals.push(1.0, 0, 0)
+                    } else if ( i & 2) {
+                        x *= (j&2)? 1 : -1
+                        y *= (i&1)? -1 : 1
+                        z *= (j&1)? 1 : -1                        
+                        this.normals.push(0, 1.0, 0)
+                    } else {
+                        x *= (j&2)? 1 : -1
+                        y *= (j&1)? 1 : -1
+                        z *= (i&1)? -1 : 1
+                        this.normals.push(0, 0, 1.0)
+                    }
+                    this.vertices.push(x, y, z)
+                    this.colors.push(0.0, 0.0, 0.0, 1.0)
+                }
+                var p = counter * 4
+                var q = counter * 4 + 1
+                var r = counter * 4 + 2
+                var s = counter * 4 + 3
+                this.indices.push(p, q, r)
+                this.indices.push(q, r, s)
+            }
+            for(var i = 0; i < 6 / 3; i++, counter++){
+                for(var j = 0; j < 4; j++){
+                    var x = d, y = w, z = h
+                    if ( i & 2) {
+                        x *= (j&2)? 1 : -1
+                        y *= (i&1)? -1 : 1
+                        z *= (j&1)? 1 : -1
+                    } else {
+                        x *= (j&2)? 1 : -1
+                        y *= (j&1)? 1 : -1
+                        z *= (i&1)? -1 : 1
+                    }
+                    this.vertices2.push([x, y, z, 1.0])
+                    this.position.push([x, y, z, 1.0])
+                }
+            }
+        }
+
+        function letterShape() {
+            Shape.call(this)
+            this.type = 'Shape'
+            this.vertices = [
+                1.0*2, 0.65*2, 0.25*2,
+                0.4*2, 0.65*2, 0.25*2,
+                -1.0*2, -0.65*2, 0.25*2,
+                -0.4*2, -0.65*2, 0.25*2,
+
+                -1.0*2, -0.65*2, -0.25*2,
+                -0.4*2, -0.65*2, -0.25*2,
+                1.0*2, 0.65*2, -0.25*2,
+                0.4*2, 0.65*2, -0.25*2,
+
+                -1.0*2, 0.65*2, -0.25*2,
+                -1.0*2, 0.65*2, 0.25*2,
+                0.4*2, 0.65*2, 0.25*2,
+                0.4*2, 0.65*2, -0.25*2,
+
+                1.0*2, -0.65*2, 0.25*2,
+                -0.4*2, -0.65*2, 0.25*2,
+                -0.4*2, -0.65*2, -0.25*2,
+                1.0*2, -0.65*2, -0.25*2,
+
+                -0.4*2, -0.65*2, -0.25*2,
+                -0.4*2, -0.65*2, 0.25*2,
+                1.0*2, 0.65*2, 0.25*2,
+                1.0*2, 0.65*2, -0.25*2,
+
+                0.4*2, 0.65*2, 0.25*2,
+                0.4*2, 0.65*2, -0.25*2,
+                -1.0*2, -0.65*2, -0.25*2,
+                -1.0*2, -0.65*2, 0.25*2,
+
+                1.0*2, -1.0*2, -0.25*2,
+                1.0*2, -1.0*2, 0.25*2,
+                -1.0*2, -1.0*2, 0.25*2,
+                -1.0*2, -1.0*2, -0.25*2,
+
+                1.0*2, -1.0*2, -0.25*2,
+                1.0*2, -0.65*2, -0.25*2,
+                1.0*2, -0.65*2, 0.25*2,
+                1.0*2, -1.0*2, 0.25*2,
+
+                -1.0*2, -1.0*2, 0.25*2,
+                -1.0*2, -0.65*2, 0.25*2,
+                -1.0*2, -0.65*2, -0.25*2,
+                -1.0*2, -1.0*2, -0.25*2,
+
+                -1.0*2, -0.65*2, 0.25*2,
+                1.0*2, -0.65*2, 0.25*2,
+                1.0*2, -1.0*2, 0.25*2,
+                -1.0*2, -1.0*2, 0.25*2,
+
+                -1.0*2, -0.65*2, -0.25*2,
+                1.0*2, -0.65*2, -0.25*2,
+                1.0*2, -1.0*2, -0.25*2,
+                -1.0*2, -1.0*2, -0.25*2,
+
+                1.0*2, 1.0*2, -0.25*2,
+                1.0*2, 1.0*2, 0.25*2,
+                -1.0*2, 1.0*2, 0.25*2,
+                -1.0*2, 1.0*2, -0.25*2,
+
+                1.0*2, 0.65*2, 0.25*2,
+                1.0*2, 0.65*2, -0.25*2,
+                1.0*2, 1.0*2, -0.25*2,
+                1.0*2, 1.0*2, 0.25*2,
+
+                -1.0*2, 1.0*2, 0.25*2,
+                -1.0*2, 1.0*2, -0.25*2,
+                -1.0*2, 0.65*2, -0.25*2,
+                -1.0*2, 0.65*2, 0.25*2,
+
+                -1.0*2, 1.0*2, 0.25*2,
+                1.0*2, 1.0*2, 0.25*2,
+                1.0*2, 0.65*2, 0.25*2,
+                -1.0*2, 0.65*2, 0.25*2,
+
+                1.0*2, 0.65*2, -0.25*2,
+                -1.0*2, 0.65*2, -0.25*2,
+                -1.0*2, 1.0*2, -0.25*2,
+                1.0*2, 1.0*2, -0.25*2,
+            ]
+
+            this.indices = [
+                0, 1, 2,      0, 2, 3,
+                4, 5, 6,      4, 6, 7, 
+                8, 9, 10,     8, 10, 11,
+                12, 13, 14,   12, 14, 15, 
+                16, 17, 18,   16, 18, 19, 
+                20, 21, 22,   20, 22, 23,  
+                24, 25, 26,   24, 26, 27, 
+                28, 29, 30,   28, 30, 31,
+                32, 33, 34,   32, 34, 35, 
+                36, 37, 38,   36, 38, 39, 
+                40, 41, 42,   40, 42, 43, 
+                44, 45, 46,   44, 46, 47, 
+                48, 49, 50,   48, 50, 51,
+                52, 53, 54,   52, 54, 55,
+                56, 57, 58,   56, 58, 59,
+                60, 61, 62,   60, 62, 63
+            ]
+            this.position = [
+                [1.0*2, 0.65*2, 0.25*2, 1],
+                [0.4*2, 0.65*2, 0.25*2, 1],
+                [-1.0*2, -0.65*2, 0.25*2, 1],
+                [-0.4*2, -0.65*2, 0.25*2, 1],
+
+                [-1.0*2, -0.65*2, -0.25*2, 1],
+                [-0.4*2, -0.65*2, -0.25*2, 1],
+                [1.0*2, 0.65*2, -0.25*2, 1],
+                [0.4*2, 0.65*2, -0.25*2, 1],
+
+                [-1.0*2, 0.65*2, -0.25*2, 1],
+                [-1.0*2, 0.65*2, 0.25*2, 1],
+                [0.4*2, 0.65*2, 0.25*2, 1],
+                [0.4*2, 0.65*2, -0.25*2, 1],
+
+                [1.0*2, -0.65*2, 0.25*2, 1],
+                [-0.4*2, -0.65*2, 0.25*2, 1],
+                [-0.4*2, -0.65*2, -0.25*2, 1],
+                [1.0*2, -0.65*2, -0.25*2, 1],
+
+                [-0.4*2, -0.65*2, -0.25*2, 1],
+                [-0.4*2, -0.65*2, 0.25*2, 1],
+                [1.0*2, 0.65*2, 0.25*2, 1],
+                [1.0*2, 0.65*2, -0.25*2, 1],
+
+                [0.4*2, 0.65*2, 0.25*2,1,],
+                [0.4*2, 0.65*2, -0.25*2,1,],
+                [-1.0*2, -0.65*2, -0.25*2,1,],
+                [-1.0*2, -0.65*2, 0.25*2,1,],
+
+                [1.0*2, -1.0*2, -0.25*2,1,],
+                [1.0*2, -1.0*2, 0.25*2,1,],
+                [-1.0*2, -1.0*2, 0.25*2,1,],
+                [-1.0*2, -1.0*2, -0.25*2,1,],
+
+                [1.0*2, -1.0*2, -0.25*2,1,],
+                [1.0*2, -0.65*2, -0.25*2,1,],
+                [1.0*2, -0.65*2, 0.25*2,1,],
+                [1.0*2, -1.0*2, 0.25*2,1,],
+
+                [-1.0*2, -1.0*2, 0.25*2,1,],
+                [-1.0*2, -0.65*2, 0.25*2,1,],
+                [-1.0*2, -0.65*2, -0.25*2,1,],
+                [-1.0*2, -1.0*2, -0.25*2,1,],
+
+                [-1.0*2, -0.65*2, 0.25*2,1],
+                [1.0*2, -0.65*2, 0.25*2,1],
+                [1.0*2, -1.0*2, 0.25*2,1],
+                [-1.0*2, -1.0*2, 0.25*2,1],
+
+                [-1.0*2, -0.65*2, -0.25*2,1],
+                [1.0*2, -0.65*2, -0.25*2,1],
+                [1.0*2, -1.0*2, -0.25*2,1],
+                [-1.0*2, -1.0*2, -0.25*2,1],
+
+                [1.0*2, 1.0*2, -0.25*2,1],
+                [1.0*2, 1.0*2, 0.25*2,1],
+                [-1.0*2, 1.0*2, 0.25*2,1],
+                [-1.0*2, 1.0*2, -0.25*2,1],
+
+                [1.0*2, 0.65*2, 0.25*2,1],
+                [1.0*2, 0.65*2, -0.25*2,1],
+                [1.0*2, 1.0*2, -0.25*2,1],
+                [1.0*2, 1.0*2, 0.25*2,1],
+
+                [-1.0*2, 1.0*2, 0.25*2,1],
+                [-1.0*2, 1.0*2, -0.25*2,1],
+                [-1.0*2, 0.65*2, -0.25*2,1],
+                [-1.0*2, 0.65*2, 0.25*2,1],
+
+                [-1.0*2, 1.0*2, 0.25*2,1],
+                [1.0*2, 1.0*2, 0.25*2,1],
+                [1.0*2, 0.65*2, 0.25*2,1],
+                [-1.0*2, 0.65*2, 0.25*2,1],
+
+                [1.0*2, 0.65*2, -0.25*2,1],
+                [-1.0*2, 0.65*2, -0.25*2,1],
+                [-1.0*2, 1.0*2, -0.25*2,1],
+                [1.0*2, 1.0*2, -0.25*2,1],
+            ]
+            this.vertices2 = Object.assign([], this.position)
+            this.normals = []
+            this.textureCoord = []
+            for(var i = 0; i < this.vertices.length / 3; i++){
+                this.textureCoord.push(0.0, 0.0)
+            }
+            for(var i = 0; i < this.vertices.length / 6; i++){
+                this.normals.push(0.0, 0.0, 1.0)
+            }
+            for(var i = 0; i < this.vertices.length / 6; i++){
+                this.normals.push(0.0, 1.0, 0.0)
+            }
+            var color = new addColor("fde26c")
+            this.colors = []
+            for(var i = 0; i < this.vertices.length / 3; i++){
+                this.colors.push(color.r / 255, color.g / 255, color.b/ 255, 1.0)
+            }
+            this.textureSrc = undefined
+        }
+
+        function getCenter(letter) {
+            var center = [0, 0, 0]
+            for(var i = 0; i < letter.position.length/2; i++){
+                center[0] += letter.position[i][0]
+                center[1] += letter.position[i][1]
+                center[2] += letter.position[i][2]
+            }
+            center[0] /= letter.position.length/2
+            center[1] /= letter.position.length/2
+            center[2] /= letter.position.length/2
+            return center
+        }
+
+        function addColor(colorHex){
+            var splitHex = colorHex.split('')
+            this.r = parseInt(splitHex[0].toString() + splitHex[1].toString(), 16)
+            this.g = parseInt(splitHex[2].toString() + splitHex[3].toString(), 16)
+            this.b = parseInt(splitHex[4].toString() + splitHex[5].toString(), 16)
+        }
+
+        function ambientLight(color, intensity = 0.2) {
+            this.type = 'ambient-light'
+            this.color = {}
+            this.color.r = color.r/255 * intensity
+            this.color.g = color.g/255 * intensity
+            this.color.b = color.b/255 * intensity
+        }
+
+        function PointLight(color, position) {
+            this.type = 'point-light'
+            this.color = {}
+            this.color.r = color.r/255
+            this.color.g = color.g/255
+            this.color.b = color.b/255
+            this.position = position
+        }
+
+        function multiply(a,b) {
+            var c1,c2,c3,c4;
+            c1 = a[0]*b[0] + a[4]*b[1] + a[8]*b[2] + a[12]*b[3]
+            c2 = a[1]*b[0] + a[5]*b[1] + a[9]*b[2] + a[13]*b[3]
+            c3 = a[2]*b[0] + a[6]*b[1] + a[10]*b[2] + a[14]*b[3]
+            c4 = a[3]*b[0] + a[7]*b[1] + a[11]*b[2] + a[15]*b[3]
+            return [c1,c2,c3,c4]
+        }
+
+        function sideToPoint(a,b,c) {
+            var n = []
+            var temp = []
+            var temp2 = []
+            temp = vec3.subtract(temp,b,a)
+            temp2= vec3.subtract(temp2,c,b)
+            n = vec3.cross(n,temp,temp2)
+            var d = 0
+            d = vec3.dot(n.map(x =>-x), a)
+            return n.concat(d)
+        }
+
+        function distance(side, point) {
+            var point2 = point;
+            var n = Math.abs(side[0]*point2[0] + side[1]*point2[1] + side[2]*point2[2] + side[3])
+            var d = Math.sqrt(side.slice(0,3).map(x => x*x).reduce((a,b) => a+b, 0))
+            var dist = n/d
+            return dist
+        }
+
+        var back
+        var front
+        var right
+        var left
+        var bottom
+        var up
+        var cube
+        var THRESHOLD
+        var trans = 1
+        var dir = [1, -1, 1]
+
+        function addCols(){
+            var point = cube.position
+            back = sideToPoint(point[2], point[3], point[6])
+            front = sideToPoint(point[1], point[4], point[5])
+            right = sideToPoint(point[1], point[3], point[5])
+            left = sideToPoint(point[0], point[2],point[4])
+            bottom = sideToPoint(point[1], point[2], point[3])
+            up = sideToPoint(point[4], point[5], point[6])
+        }
+        class detectCols{
+            constructor(cube2, r){
+                cube = cube2
+                this.r = r
+                THRESHOLD = 0.05
+            }
+            detect(){
+                var pos = this.r.position;
+                for(var i = 0; i < pos.length; i++){
+                    if(distance(up, pos[i]) < THRESHOLD && dir[1] > 0) {
+                        dir[1] *= -1 
+                        trans *= -1 
+                        return
+                    }
+                    if(distance(up, pos[i]) < THRESHOLD && dir[1] < 0) {
+                        return
+                    }
+                }
+                for(var i = 0; i < pos.length; i++){
+                    if(distance(bottom, pos[i]) < THRESHOLD && dir[1] < 0) {
+                        dir[1] *= -1 
+                        trans *= -1 
+                        return
+                    }
+                    if(distance(bottom, pos[i]) < THRESHOLD && dir[1] > 0) {
+                        return
+                    }
+                }
+                for(var i = 0; i < pos.length; i++){
+                    if(distance(front, pos[i]) < THRESHOLD && dir[2] > 0) {
+                        dir[2] *= -1 
+                        trans *= -1
+                        return
+                }
+                    if(distance(front, pos[i]) < THRESHOLD && dir[2] < 0) {
+                        return
+                    }
+                }
+                for(var i = 0; i < pos.length; i++){
+                    if(distance(back, pos[i]) < THRESHOLD && dir[2] < 0) {
+                        dir[2] *= -1 
+                        trans *= -1  
+                        return
+                    }
+                    if(distance(back, pos[i]) < THRESHOLD && dir[2] > 0) {
+                        return
+                    }
+                }
+                for(var i = 0; i < pos.length; i++){
+                    if(distance(right, pos[i]) < THRESHOLD && dir[0] > 0) {
+                        dir[0] *= -1 
+                        trans *= -1 
+                        return
+                    }
+                    if(distance(right, pos[i]) < THRESHOLD && dir[0] < 0) {
+                        return
+                    }
+                }
+                for(var i = 0; i < pos.length; i++){
+                    if(distance(left, pos[i]) < THRESHOLD && dir[0] < 0) {
+                        dir[0] *= -1
+                        trans *= -1 
+                        return
+                    }
+                    if(distance(left, pos[i]) < THRESHOLD && dir[0] < 0) {
+                        return
+                    }
+                }
+            }
+        }
+        
+        initGL()
+        var cratesCube = new cubeShape(24, 24, 24, 2)
+        cratesCube.rotation.y = 135
+        cratesCube.rotation.x = 90
+        cratesCube.textureSrc = 'Crate.jpg'
+        for(var i = 0; i < 6; i+=cratesCube.step){
+            cratesCube.textureCoord.push(0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0)
+        }
+
+        cratesCube.action = () => {}
+        cratesCube.temporaryMatrixWorld = cratesCube.matrixWorld
+        document.addEventListener(cratesCube.id, cratesCube.action.bind(cratesCube))
+        createModel(cratesCube)
+        var r = new letterShape()
+        r.rotation.y = 45
+        r.action = () => {
+            r.matrixWorld = Object.assign({},r.temporaryMatrixWorld)
+            r.move.vector([window.dir[0]*0.1, window.dir[1]*0.1, window.dir[2]*0.1])
+            r.rotation.y += window.trans*0.5
+            r.translate.mat = [-1.5, -3.0, -0.5]
+        }
+        r.temporaryMatrixWorld = Object.assign({}, r.matrixWorld)
+        document.addEventListener(r.id, r.action.bind(r))
+        createModel(r)
+        var ambient = new ambientLight(new addColor("ffffff"))
+        createModel(ambient)
+        var pointLight = new PointLight(new addColor("fde26c"), {x:0, y:5, z:-35})
+        createModel(pointLight)
+        function tick(){
+            requestAnimationFrame(tick)
+            drawScene()
+        }
+        document.addEventListener('after-render', function(){
+            var collision = new detectCols(cratesCube, r)
+            addCols()
+            collision.detect()
+        })
+
+        document.addEventListener('light-follow', function(){
+            var center = getCenter(r)
+            pointLight.position.x = center[0]
+            pointLight.position.y = center[1]
+            pointLight.position.z = center[2]
+        })
+
         tick()
-      }
+        var eventRightClick = new CustomEvent('right-click')
+        var AMORTIZATION = 0.95
+        var drag = false
+        var old_x, old_y
+        var dX = 0, dY = 0
+        var THETA = 0, PHI = 0
+
+        var mouseDown = function(e) {
+            if(e.which === 1){
+                drag = true
+                old_x = e.pageX, old_y = e.pageY
+                e.preventDefault()
+                return false
+            } 
+            else if (e.which === 3){
+                e.preventDefault()
+                document.dispatchEvent(eventRightClick)
+            }
+        }
+
+        var mouseUp = function(e){
+            if(e.which ===  1){
+                drag = false
+            }
+        }
+
+        var mouseMove = function(e) {
+            if(e.which === 1){
+                if (!drag) return false
+                dX = (e.pageX-old_x)*2*Math.PI/gl.viewportWidth/2
+                dY = (e.pageY-old_y)*2*Math.PI/gl.viewportHeight/2
+                THETA+= dX;
+                PHI+=dY;
+                old_x = e.pageX, old_y = e.pageY
+                e.preventDefault()
+            }
+        }
+        document.addEventListener("mousedown", mouseDown, false)
+        document.addEventListener("mouseup", mouseUp, false)
+        document.addEventListener("mouseout", mouseUp, false)
+        document.addEventListener("mousemove", mouseMove, false)
+        window.oncontextmenu = function (){
+            return false
+        }
     </script>
-  </head>
-  <body onload="webGLStart();">
-    <canvas id="mycanvas" style="border: none" width="500" height="500"></canvas>
-  </body>
+</body>
 </html>
