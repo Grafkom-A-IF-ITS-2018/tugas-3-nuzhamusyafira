@@ -154,6 +154,15 @@
         var mvMatrix1 = mat4.create()
         var pMatrix1 = mat4.create()
         var mvMatrixStack1 = []
+        var mvMatrix2 = mat4.create()
+        var pMatrix2 = mat4.create()
+        var mvMatrixStack2 = []
+        var mvMatrix3 = mat4.create()
+        var pMatrix3 = mat4.create()
+        var mvMatrixStack3 = []
+        var mvMatrix4 = mat4.create()
+        var pMatrix4 = mat4.create()
+        var mvMatrixStack4 = []
         var modelBuffer = []
 
         function mvPushMatrix(x) {
@@ -163,6 +172,18 @@
             if (x==1) {
                 mvMatrix=mvMatrix1
                 mvMatrixStack=mvMatrixStack1
+            }
+            else if (x==2) {
+                mvMatrix=mvMatrix2
+                mvMatrixStack=mvMatrixStack2
+            }
+            else if (x==3) {
+                mvMatrix=mvMatrix3
+                mvMatrixStack=mvMatrixStack3
+            }
+            else if (x==4) {
+                mvMatrix=mvMatrix4
+                mvMatrixStack=mvMatrixStack4
             }
             mat4.copy(copy, mvMatrix)
             mvMatrixStack.push(copy)
@@ -174,6 +195,18 @@
                 mvMatrixStack = mvMatrixStack1
                 mvMatrix1 = mvMatrixStack.pop()
             }
+            else if (x==2) {
+                mvMatrixStack = mvMatrixStack2
+                mvMatrix2 = mvMatrixStack.pop()
+            }
+            else if (x==3) {
+                mvMatrixStack = mvMatrixStack3
+                mvMatrix3 = mvMatrixStack.pop()
+            }
+            else if (x==4) {
+                mvMatrixStack = mvMatrixStack4
+                mvMatrix4 = mvMatrixStack.pop()
+            }
         }
 
         function setMatrixUniforms(x) {
@@ -182,6 +215,18 @@
             if (x==1) {
                 mvMatrix = mvMatrix1
                 pMatrix = pMatrix1
+            }
+            else if (x==2) {
+                mvMatrix = mvMatrix2
+                pMatrix = pMatrix2
+            }
+            else if (x==3) {
+                mvMatrix = mvMatrix3
+                pMatrix = pMatrix3
+            }
+            else if (x==4) {
+                mvMatrix = mvMatrix4
+                pMatrix = pMatrix4
             }
             mat3.normalFromMat4(normalMatrix, mvMatrix)
             gl.uniformMatrix4fv(shaderProgram.pMatrixUniform, false, pMatrix)
@@ -263,13 +308,13 @@
                         drawScene1(0 * width / 2, 1 * height / 2, width / 2, height / 2)
                     }
                     if( a == 0 && b == 1){
-                        drawScene1(1 * width / 2, 1 * height / 2, width / 2, height / 2)
+                        drawScene2(1 * width / 2, 1 * height / 2, width / 2, height / 2)
                     }
                     if( a == 1 && b == 0){
-                        drawScene1(0 * width / 2, 0 * height / 2, width / 2, height / 2)
+                        drawScene3(0 * width / 2, 0 * height / 2, width / 2, height / 2)
                     }
                     if( a == 1 && b == 1){
-                        drawScene1(1 * width / 2, 0 * height / 2, width / 2, height / 2)
+                        drawScene4(1 * width / 2, 0 * height / 2, width / 2, height / 2)
                     }
                 }
             }
@@ -320,6 +365,160 @@
                 mvPopMatrix(1)
             }
             document.dispatchEvent(eventAfterRender)
+        }
+
+        function drawScene2(sw, sh, ew, eh) {
+            gl.scissor(sw, sh, ew, eh)
+            gl.viewport(sw, sh, ew, eh)
+            gl.clear(gl.COLOR_BUFFER_BIT, gl.DEPTH_BUFFER_BIT)
+            mat4.perspective(pMatrix2, glMatrix.toRadian(45), gl.viewportWidth/gl.viewportHeight, 0.1, 1000.0)
+            mat4.identity(mvMatrix2)
+            mat4.translate(mvMatrix2, mvMatrix2, [0.0, 0.0,-50.0])
+            document.addEventListener('right-click', function(){
+                THETA = 0
+                PHI = 0
+            });
+            mat4.rotateY(mvMatrix2, mvMatrix2, THETA)
+            mat4.rotateX(mvMatrix2, mvMatrix2, PHI)
+            for(var i = 0; i < modelBuffer.length; i++) {
+                mvPushMatrix(2)
+                var o = modelBuffer[i]
+                if(o.model2.type === 'Shape') {
+                    mat4.multiply(mvMatrix2, mvMatrix2, o.model2.matrixWorld)
+                    gl.bindBuffer(gl.ARRAY_BUFFER, o.position)
+                    gl.vertexAttribPointer(shaderProgram.vertexPositionAttribute, o.position.itemSize, gl.FLOAT, false, 0, 0)
+                    gl.bindBuffer(gl.ARRAY_BUFFER, o.color)
+                    gl.vertexAttribPointer(shaderProgram.vertexColorAttribute, o.color.itemSize, gl.FLOAT, false, 0, 0)
+                    gl.bindBuffer(gl.ARRAY_BUFFER, o.normal)
+                    gl.vertexAttribPointer(shaderProgram.vertexNormalAttribute, o.normal.itemSize, gl.FLOAT, false, 0, 0)
+                    gl.bindBuffer(gl.ARRAY_BUFFER, o.textureCoord)
+                    gl.vertexAttribPointer(shaderProgram.textureCoordAttribute, o.textureCoord.itemSize, gl.FLOAT, false, 0, 0)
+                    if(o.textureSrc !== undefined){
+                        gl.activeTexture(gl.TEXTURE0)
+                        gl.bindTexture(gl.TEXTURE_2D, o.texture)
+                        gl.uniform1i(shaderProgram.samplerUniform, 0)
+                    }
+                    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, o.indices)
+                    var temp = []
+                    for(let i = 0; i < o.model2.vertices2.length; i++){
+                        temp.push(multiply(mvMatrix2, o.model2.vertices2[i]))
+                    }
+                    o.model2.position = JSON.parse(JSON.stringify(temp))
+                    setMatrixUniforms(2)
+                    gl.drawElements(gl.TRIANGLES, o.indices.numItems, gl.UNSIGNED_SHORT, 0)
+                } else if (o.model2.type === 'ambient-light') {
+                    gl.uniform3f(shaderProgram.ambientColorUniform, o.model2.color.r, o.model2.color.g, o.model2.color.b)
+                } else if (o.model2.type === 'point-light') {
+                    gl.uniform3f(shaderProgram.pointLightingLocationUniform, o.model2.position.x, o.model2.position.y, o.model2.position.z)
+                    gl.uniform3f(shaderProgram.pointLightingColorUniform, o.model2.color.r, o.model2.color.g, o.model2.color.b)
+                }
+                mvPopMatrix(2)
+            }
+            document.dispatchEvent(eventAfterRender)
+        }
+
+        var rTrans = [0.0, 0.0, 0.0]
+        var rRot = 0
+
+        function drawScene3(sw, sh, ew, eh) {
+            gl.scissor(sw, sh, ew, eh)
+            gl.viewport(sw, sh, ew, eh)
+            gl.clear(gl.COLOR_BUFFER_BIT, gl.DEPTH_BUFFER_BIT)
+            mat4.perspective(pMatrix3, glMatrix.toRadian(45), gl.viewportWidth/gl.viewportHeight, 0.1, 1000.0)
+            mat4.identity(mvMatrix3)
+            for(var i = 0; i < modelBuffer.length; i++) {
+                mvPushMatrix(3)
+                var o = modelBuffer[i]
+                if(i == 1) {
+                    continue
+                }
+                if(o.model2.type === 'Shape') {
+                    mat4.multiply(mvMatrix2, mvMatrix2, o.model2.matrixWorld)
+                    gl.bindBuffer(gl.ARRAY_BUFFER, o.position)
+                    gl.vertexAttribPointer(shaderProgram.vertexPositionAttribute, o.position.itemSize, gl.FLOAT, false, 0, 0)
+                    gl.bindBuffer(gl.ARRAY_BUFFER, o.color)
+                    gl.vertexAttribPointer(shaderProgram.vertexColorAttribute, o.color.itemSize, gl.FLOAT, false, 0, 0)
+                    gl.bindBuffer(gl.ARRAY_BUFFER, o.normal)
+                    gl.vertexAttribPointer(shaderProgram.vertexNormalAttribute, o.normal.itemSize, gl.FLOAT, false, 0, 0)
+                    gl.bindBuffer(gl.ARRAY_BUFFER, o.textureCoord)
+                    gl.vertexAttribPointer(shaderProgram.textureCoordAttribute, o.textureCoord.itemSize, gl.FLOAT, false, 0, 0)
+                    if(o.textureSrc !== undefined){
+                        gl.activeTexture(gl.TEXTURE0)
+                        gl.bindTexture(gl.TEXTURE_2D, o.texture)
+                        gl.uniform1i(shaderProgram.samplerUniform, 0)
+                    }
+                    rTrans[0] += (-window.dir[0])*0.1
+                    rTrans[1] += (-window.dir[1])*0.1
+                    rTrans[2] += (-window.dir[2])*0.1
+                    rRot = rRot + (-window.trans*0.5)
+                    var temporary = Object.assign([], o.model2.matrixWorld)
+                    mat4.rotate(temporary, temporary, glMatrix.toRadian(rRot), [0, 0, -1])
+                    mat4.translate(temporary, temporary, [-rTrans[0], rTrans[2], -rTrans[1]])
+                    mat4.multiply(mvMatrix3, mvMatrix3, temporary )
+                    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, o.indices)
+                    var temp = [];
+                    for(var i = 0; i < o.model2.vertices2.length; i++){
+                        temp.push(multiply(mvMatrix3, o.model2.vertices2[i]))
+                    }
+                    o.model2.position = JSON.parse(JSON.stringify(temp))
+                    setMatrixUniforms(3)
+                    gl.drawElements(gl.TRIANGLES, o.indices.numItems, gl.UNSIGNED_SHORT, 0)
+                }
+                else {
+                    lightningToBuffer(o)
+                }
+                mvPopMatrix(3)
+            }
+        }
+
+        var cameraAngle = 0
+
+        function drawScene4(sw, sh, ew, eh) {
+            gl.scissor(sw, sh, ew, eh)
+            gl.viewport(sw, sh, ew, eh)
+            gl.clear(gl.COLOR_BUFFER_BIT, gl.DEPTH_BUFFER_BIT)
+            mat4.perspective(pMatrix4, glMatrix.toRadian(45), gl.viewportWidth/gl.viewportHeight, 0.1, 1000.0)
+            mat4.identity(mvMatrix4)
+            var cameraMatrix = mat4.create(), viewMatrix = mat4.create()
+            mat4.rotateY(cameraMatrix, cameraMatrix, cameraAngle)
+            mat4.translate(cameraMatrix, cameraMatrix, [0, 0, 50])   
+            mat4.invert(viewMatrix,cameraMatrix)
+            mat4.multiply(pMatrix4, pMatrix4,  viewMatrix);
+            for(var i = 0; i < modelBuffer.length; i++) {
+                mvPushMatrix(4)
+                var o = modelBuffer[i]
+                if(o.model2.type === 'Shape') {
+                    mat4.multiply(mvMatrix4, mvMatrix4, o.model2.matrixWorld)
+                    gl.bindBuffer(gl.ARRAY_BUFFER, o.position)
+                    gl.vertexAttribPointer(shaderProgram.vertexPositionAttribute, o.position.itemSize, gl.FLOAT, false, 0, 0)
+                    gl.bindBuffer(gl.ARRAY_BUFFER, o.color)
+                    gl.vertexAttribPointer(shaderProgram.vertexColorAttribute, o.color.itemSize, gl.FLOAT, false, 0, 0)
+                    gl.bindBuffer(gl.ARRAY_BUFFER, o.normal)
+                    gl.vertexAttribPointer(shaderProgram.vertexNormalAttribute, o.normal.itemSize, gl.FLOAT, false, 0, 0)
+                    gl.bindBuffer(gl.ARRAY_BUFFER, o.textureCoord)
+                    gl.vertexAttribPointer(shaderProgram.textureCoordAttribute, o.textureCoord.itemSize, gl.FLOAT, false, 0, 0)
+                    if(o.textureSrc !== undefined){
+                        gl.activeTexture(gl.TEXTURE0)
+                        gl.bindTexture(gl.TEXTURE_2D, o.texture)
+                        gl.uniform1i(shaderProgram.samplerUniform, 0)
+                    }
+                    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, o.indices)
+                    var temp = []
+                    for(let i = 0; i < o.model2.vertices2.length; i++){
+                        temp.push(multiply(mvMatrix4, o.model2.vertices2[i]))
+                    }
+                    o.model2.position = JSON.parse(JSON.stringify(temp))
+                    setMatrixUniforms(4)
+                    gl.drawElements(gl.TRIANGLES, o.indices.numItems, gl.UNSIGNED_SHORT, 0)
+                } else if (o.model2.type === 'ambient-light') {
+                    gl.uniform3f(shaderProgram.ambientColorUniform, o.model2.color.r, o.model2.color.g, o.model2.color.b)
+                } else if (o.model2.type === 'point-light') {
+                    gl.uniform3f(shaderProgram.pointLightingLocationUniform, o.model2.position.x, o.model2.position.y, o.model2.position.z)
+                    gl.uniform3f(shaderProgram.pointLightingColorUniform, o.model2.color.r, o.model2.color.g, o.model2.color.b)
+                }
+                mvPopMatrix(4)
+            }
+            cameraAngle += 0.02
         }
 
         function Shape(){
